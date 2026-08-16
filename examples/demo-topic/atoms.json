@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "description": "Demo interest surface: open share method (not private research)",
+  "created": "2026-08-16T00:00:00Z",
+  "updated": "2026-08-16T00:00:00Z",
+  "atoms": [
+    "Share intentional interest surfaces, not whole vaults or ambient life logs.",
+    "A resilient packet is a small set of durable claims under coverage plus support minus redundancy.",
+    "Interest intersection is the browse primitive: my surface cap their surface, reshaped in realtime.",
+    "Public creators can publish atoms the way they publish RSS; followers intersect rather than drown in streams.",
+    "Classical web stays compatible: atoms may cite URLs; packets may project to markdown or feeds.",
+    "Inner personal data never leaves without intentional promote into an interest surface.",
+    "Agents and people resume from packets, not full chat transcripts.",
+    "Near-duplicate claims should not co-dominate a packet; diversity is part of compression quality."
+  ],
+  "consistency": {
+    "0,1": 0.75,
+    "0,2": 0.85,
+    "0,3": 0.7,
+    "0,5": 0.9,
+    "1,2": 0.8,
+    "1,6": 0.75,
+    "1,7": 0.8,
+    "2,3": 0.85,
+    "2,4": 0.55,
+    "3,4": 0.6,
+    "5,6": 0.65,
+    "6,7": 0.5
+  }
+}

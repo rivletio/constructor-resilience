@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "constructor-resilience"
+version = "0.1.0"
+description = "Open coherence cache: durable atoms, resilient packets, interest intersection"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Rivlet / Ikonic contributors" }]
+keywords = [
+  "coherence",
+  "context-compression",
+  "QUBO",
+  "knowledge-graph",
+  "interest-intersection",
+  "ikonic",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.optional-dependencies]
+viz = ["matplotlib>=3.7", "networkx>=3.0"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+coherence = "coherence_cache.cli:main"
+knowledge_ops = "coherence_cache.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rivletio/constructor-resilience"
+Documentation = "https://github.com/rivletio/constructor-resilience#readme"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

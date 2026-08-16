@@ -1,0 +1,1329 @@
+#!/usr/bin/env python3
+"""
+Session helpers for constructor-resilience multi-store knowledge.
+
+Commands:
+  status              Show meta + active topic
+  list                List topics
+  use <topic-id>      Set active topic (zoom in)
+  create <id> --title ... [--description ...]
+  path                Print path to active atoms.json
+  render              Render active topic HTML
+  add-atom "text"     Append an atom to the active store (no consistency yet)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .paths import get_root, set_root, ensure_meta, meta_path, active_path
+from . import refs_util as _refs_mod
+from . import search as resilience_search
+
+extract_references = _refs_mod.extract_references
+linkify_claim = _refs_mod.linkify_claim
+
+def now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def load_json(path: Path, default=None):
+    if not path.exists():
+        return default
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_json(path: Path, data) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def load_meta() -> dict:
+    ensure_meta()
+    meta = load_json(meta_path())
+    if not meta:
+        raise SystemExit(f"Meta-store not found: {meta_path()}")
+    return meta
+
+
+def save_meta(meta: dict) -> None:
+    meta["updated"] = now_iso()
+    save_json(meta_path(), meta)
+
+
+def get_active() -> dict | None:
+    return load_json(active_path())
+
+
+def set_active(topic_id: str, meta: dict | None = None) -> dict:
+    meta = meta or load_meta()
+    topic = next((t for t in meta.get("topics", []) if t["id"] == topic_id), None)
+    if not topic:
+        raise SystemExit(f"Unknown topic id: {topic_id}")
+    active = {
+        "topic_id": topic_id,
+        "path": topic["path"],
+        "title": topic.get("title", topic_id),
+        "atoms_path": str(get_root() / topic["path"] / "atoms.json"),
+        "set_at": now_iso(),
+    }
+    save_json(active_path(), active)
+    return active
+
+
+def topic_atoms_path(topic: dict) -> Path:
+    return get_root() / topic["path"] / "atoms.json"
+
+
+def empty_store(description: str) -> dict:
+    ts = now_iso()
+    return {
+        "version": 1,
+        "description": description,
+        "created": ts,
+        "updated": ts,
+        "atoms": [],
+        "consistency": {},
+        "notes": [
+            "atoms: ordered list of knowledge atoms (strings).",
+            "consistency: object with keys 'i,j' (i < j) mapping to scores in [-1.0, 1.0].",
+        ],
+    }
+
+
+def cmd_status(_args):
+    meta = load_meta()
+    active = get_active()
+    print(f"Knowledge root: {get_root()}")
+    print(f"Topics: {len(meta.get('topics', []))}")
+    print(f"Meta links: {len(meta.get('links', []))}")
+    if active:
+        print(f"Active topic: {active['topic_id']} — {active.get('title')}")
+        print(f"  atoms: {active.get('atoms_path')}")
+        p = Path(active["atoms_path"])
+        if p.exists():
+            store = load_json(p)
+            print(f"  atom_count: {len(store.get('atoms', []))}")
+            print(f"  edge_count: {len(store.get('consistency', {}))}")
+    else:
+        print("Active topic: (none — run: coherence use <topic-id>)")
+
+
+def cmd_list(_args):
+    meta = load_meta()
+    active = get_active() or {}
+    active_id = active.get("topic_id")
+    for t in meta.get("topics", []):
+        mark = " *" if t["id"] == active_id else ""
+        print(f"{t['id']}{mark}")
+        print(f"  {t.get('title', '')}")
+        print(f"  atoms={t.get('atom_count', '?')} edges={t.get('edge_count', '?')}  {t.get('path')}")
+        if t.get("description"):
+            print(f"  {t['description'][:120]}")
+        print()
+
+
+def cmd_use(args):
+    active = set_active(args.topic_id)
+    print(f"Active topic → {active['topic_id']}")
+    print(f"  {active['atoms_path']}")
+
+
+def slugify(s: str) -> str:
+    s = s.lower().strip()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-")[:64] or "topic"
+
+
+def cmd_create(args):
+    meta = load_meta()
+    topic_id = args.id or slugify(args.title)
+    if any(t["id"] == topic_id for t in meta.get("topics", [])):
+        raise SystemExit(f"Topic already exists: {topic_id}")
+
+    rel_path = f"topics/{topic_id}"
+    topic_dir = get_root() / rel_path
+    topic_dir.mkdir(parents=True, exist_ok=True)
+
+    description = args.description or args.title
+    store = empty_store(description)
+    atoms_path = topic_dir / "atoms.json"
+    save_json(atoms_path, store)
+
+    topic = {
+        "id": topic_id,
+        "title": args.title,
+        "path": rel_path,
+        "description": description,
+        "atom_count": 0,
+        "edge_count": 0,
+        "created": now_iso(),
+        "updated": now_iso(),
+        "tags": args.tags or [],
+    }
+    meta.setdefault("topics", []).append(topic)
+    save_meta(meta)
+
+    if args.use or not get_active():
+        set_active(topic_id, meta)
+
+    print(f"Created topic: {topic_id}")
+    print(f"  {atoms_path}")
+
+
+def cmd_path(_args):
+    active = get_active()
+    if not active:
+        raise SystemExit("No active topic. Run: coherence use <topic-id>")
+    print(active["atoms_path"])
+
+
+def refresh_topic_counts(topic_id: str):
+    meta = load_meta()
+    topic = next((t for t in meta["topics"] if t["id"] == topic_id), None)
+    if not topic:
+        return
+    store = load_json(topic_atoms_path(topic), {})
+    topic["atom_count"] = len(store.get("atoms", []))
+    topic["edge_count"] = len(store.get("consistency", {}))
+    topic["updated"] = now_iso()
+    save_meta(meta)
+
+
+def load_active_store():
+    active = get_active()
+    if not active:
+        raise SystemExit("No active topic. Run: coherence use <topic-id>")
+    path = Path(active["atoms_path"])
+    store = load_json(path)
+    if store is None:
+        raise SystemExit(f"Store missing: {path}")
+    return active, path, store
+
+
+def parse_consistency_map(store: dict) -> dict:
+    """Return dict[(i,j), float] from JSON string keys 'i,j'."""
+    out = {}
+    for key, score in (store.get("consistency") or {}).items():
+        try:
+            if isinstance(key, str) and "," in key:
+                i, j = map(int, key.split(","))
+            elif isinstance(key, (list, tuple)) and len(key) == 2:
+                i, j = int(key[0]), int(key[1])
+            else:
+                continue
+            a, b = (i, j) if i < j else (j, i)
+            out[(a, b)] = float(score)
+        except Exception:
+            continue
+    return out
+
+
+def dump_consistency_map(cons: dict) -> dict:
+    return {f"{i},{j}": round(float(s), 4) for (i, j), s in sorted(cons.items())}
+
+
+def token_set(s: str) -> set:
+    return set(re.findall(r"[a-z0-9]+", s.lower()))
+
+
+def heuristic_pair_score(a: str, b: str) -> float:
+    """Cheap lexical overlap heuristic in [-0.2, 0.85]. Not a substitute for LLM judgment."""
+    ta, tb = token_set(a), token_set(b)
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    jacc = inter / union if union else 0.0
+    # map Jaccard to mild positive consistency; leave room for human/LLM overrides
+    return round(min(0.85, max(0.0, jacc * 1.2 - 0.05)), 4)
+
+
+
+def cmd_render(args):
+    """Render active topic consistency graph as PNG."""
+    active = get_active()
+    if not active:
+        raise SystemExit("No active topic. Run: coherence use <topic-id>")
+    store_path = Path(active["atoms_path"])
+    out_path = store_path.with_name("atoms_graph.png")
+    from .render_graph_png import render as render_graph
+    try:
+        render_graph(store_path, out_path)
+    except ImportError as e:
+        raise SystemExit(
+            f"Graph render requires matplotlib + networkx ({e}). "
+            "pip install constructor-resilience[viz]"
+        ) from e
+    print(out_path)
+
+
+
+def cmd_add_atom(args):
+    active, path, store = load_active_store()
+    atom = args.text.strip()
+    if not atom:
+        raise SystemExit("Empty atom")
+    atoms = store.setdefault("atoms", [])
+    atoms.append(atom)
+    idx = len(atoms) - 1
+    cons = parse_consistency_map(store)
+    if args.auto_score and idx > 0:
+        for i in range(idx):
+            s = heuristic_pair_score(atoms[i], atom)
+            if abs(s) >= 0.05:
+                cons[(i, idx)] = s
+        store["consistency"] = dump_consistency_map(cons)
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"Added atom #{idx} to {active['topic_id']}")
+    if args.auto_score:
+        linked = sum(1 for (i, j) in cons if j == idx or i == idx)
+        print(f"  auto-score edges involving new atom: {linked}")
+
+
+def cmd_set_consistency(args):
+    active, path, store = load_active_store()
+    n = len(store.get("atoms", []))
+    i, j = int(args.i), int(args.j)
+    if i == j:
+        raise SystemExit("i and j must differ")
+    if not (0 <= i < n and 0 <= j < n):
+        raise SystemExit(f"Indices out of range 0..{n-1}")
+    score = float(args.score)
+    if score < -1.0 or score > 1.0:
+        raise SystemExit("score must be in [-1, 1]")
+    a, b = (i, j) if i < j else (j, i)
+    cons = parse_consistency_map(store)
+    cons[(a, b)] = score
+    store["consistency"] = dump_consistency_map(cons)
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"Set consistency ({a},{b}) = {score}")
+
+
+def cmd_rescore(args):
+    """Recompute all pairwise heuristic scores (overwrites consistency)."""
+    active, path, store = load_active_store()
+    atoms = store.get("atoms", [])
+    n = len(atoms)
+    cons = {}
+    for i in range(n):
+        for j in range(i + 1, n):
+            s = heuristic_pair_score(atoms[i], atoms[j])
+            if abs(s) >= float(args.min_abs):
+                cons[(i, j)] = s
+    store["consistency"] = dump_consistency_map(cons)
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"Rescored {n} atoms → {len(cons)} edges (min_abs={args.min_abs})")
+
+
+
+def build_packet_doc(
+    topic_id: str,
+    atoms: list,
+    selected: list,
+    energy: float,
+    method: str,
+    max_size,
+    redundancy_scale: float,
+    query: str | None = None,
+) -> dict:
+    """First-class packet artifact for agent/person handoff."""
+    # map selected texts back to indices (stable order of selection)
+    indices = []
+    for s in selected:
+        try:
+            indices.append(atoms.index(s))
+        except ValueError:
+            continue
+    return {
+        "version": 1,
+        "kind": "resilient_packet",
+        "topic_id": topic_id,
+        "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "method": method,
+        "energy": float(energy),
+        "max_size": max_size,
+        "redundancy_scale": float(redundancy_scale),
+        "query": query,
+        "atom_indices": indices,
+        "atoms": list(selected),
+        "atom_count_source": len(atoms),
+    }
+
+
+def write_packet(store_path: Path, doc: dict) -> Path:
+    out = store_path.with_name("packet.json")
+    save_json(out, doc)
+    return out
+
+
+
+def cmd_packet(args):
+    """Show or rebuild the first-class packet.json for the active topic."""
+    active, path, store = load_active_store()
+    path = Path(path)
+    packet_path = path.with_name("packet.json")
+    if args.rebuild or not packet_path.exists():
+        # rebuild via greedy
+        atoms = store.get("atoms") or []
+        if not atoms:
+            raise SystemExit("No atoms")
+        mod = resilience_search
+        cons = parse_consistency_map(store)
+        selected, eng = mod.greedy_resilient(
+            atoms, cons, max_size=args.max_size, redundancy_scale=2.0
+        )
+        topic_id = active.get("id") or active.get("topic_id") or path.parent.name
+        doc = build_packet_doc(
+            topic_id, atoms, selected, eng, "greedy", args.max_size, 2.0
+        )
+        write_packet(path, doc)
+        print(f"rebuilt {packet_path}")
+    else:
+        doc = load_json(packet_path, {})
+        print(f"packet {packet_path}")
+    doc = load_json(packet_path, {})
+    print(f"topic={doc.get('topic_id')} method={doc.get('method')} E={doc.get('energy')} size={len(doc.get('atoms') or [])}")
+    for i, a in enumerate(doc.get("atoms") or []):
+        print(f"  [{i}] {a}")
+
+
+def cmd_search(args):
+    active, path, store = load_active_store()
+    atoms = store.get("atoms", [])
+    cons = parse_consistency_map(store)
+    if not atoms:
+        raise SystemExit("Active store has no atoms")
+
+    mod = resilience_search
+
+    red_scale = getattr(args, "redundancy_scale", 2.0)
+    red_thr = getattr(args, "redundancy_threshold", 0.35)
+    write = not getattr(args, "no_write", False)
+    topic_id = active.get("id") or active.get("topic_id") or Path(path).parent.name
+
+    if args.greedy:
+        selected, eng = mod.greedy_resilient(
+            atoms,
+            cons,
+            max_size=args.max_size,
+            select_penalty=args.select_penalty,
+            redundancy_scale=red_scale,
+            redundancy_threshold=red_thr,
+        )
+        print(f"Greedy packet  E={eng:.4f}  size={len(selected)}  red_scale={red_scale}")
+        for k, a in enumerate(selected):
+            print(f"  [{k}] {a}")
+        if write:
+            doc = build_packet_doc(
+                topic_id, atoms, selected, eng, "greedy",
+                args.max_size, red_scale,
+            )
+            out = write_packet(Path(path), doc)
+            print(f"wrote {out}")
+        return
+
+    ranked = mod.find_resilient_constructors(
+        atoms,
+        cons,
+        select_penalty=args.select_penalty,
+        num_reads=args.reads,
+        num_sweeps=args.sweeps,
+        redundancy_scale=red_scale,
+        redundancy_threshold=red_thr,
+    )
+    top = ranked[: max(1, args.top)]
+    print(f"SA packets (showing {len(top)} of {len(ranked)} unique)")
+    for rank, (selected, eng) in enumerate(top):
+        print(f"\n#{rank}  E={eng:.4f}  size={len(selected)}")
+        for a in selected:
+            print(f"  - {a}")
+    if write and top:
+        selected, eng = top[0]
+        doc = build_packet_doc(
+            topic_id, atoms, selected, eng, "sa",
+            None, red_scale,
+        )
+        out = write_packet(Path(path), doc)
+        print(f"\nwrote {out}")
+
+
+def cmd_score_new(args):
+    """Heuristic-score the newest atom against all prior atoms and apply."""
+    active, path, store = load_active_store()
+    atoms = store.get("atoms", [])
+    if len(atoms) < 2:
+        raise SystemExit("Need at least 2 atoms to score")
+    # reuse local heuristic
+    cons = parse_consistency_map(store)
+    new_idx = len(atoms) - 1
+    added = 0
+    for i in range(new_idx):
+        s = heuristic_pair_score(atoms[i], atoms[new_idx])
+        if abs(s) >= float(args.min_abs):
+            cons[(i, new_idx)] = s
+            added += 1
+            print(f"  ({i},{new_idx}) = {s:+.3f}")
+    store["consistency"] = dump_consistency_map(cons)
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"score-new: wrote {added} edges for atom #{new_idx}")
+
+
+def cmd_judge_prompt(args):
+    """Print LLM-as-judge prompt for pairs (agent fills scores, then apply)."""
+    active, path, store = load_active_store()
+    atoms = store.get("atoms", [])
+    from . import consistency as mod
+    if args.new_only:
+        if len(atoms) < 2:
+            raise SystemExit("Need at least 2 atoms")
+        pairs = mod.pairs_for_new_atom(len(atoms) - 1, len(atoms) - 1)
+    else:
+        pairs = mod.all_pairs(len(atoms))
+    print(mod.format_judge_batch(atoms, pairs, max_pairs=args.max_pairs))
+
+
+def cmd_apply_scores(args):
+    """Apply JSON scores to active store. JSON: {"scores":[{"i":0,"j":1,"score":0.7},...]}"""
+    active, path, store = load_active_store()
+    if args.file:
+        payload = json.loads(Path(args.file).read_text())
+    else:
+        payload = json.loads(args.json)
+    items = payload.get("scores", payload if isinstance(payload, list) else [])
+    cons = parse_consistency_map(store)
+    n = len(store.get("atoms", []))
+    applied = 0
+    for item in items:
+        i, j, s = int(item["i"]), int(item["j"]), float(item["score"])
+        if not (0 <= i < n and 0 <= j < n) or i == j:
+            continue
+        if abs(s) < float(args.min_abs):
+            cons.pop((min(i, j), max(i, j)), None)
+            continue
+        if s < -1 or s > 1:
+            raise SystemExit(f"score out of range: {s}")
+        cons[(min(i, j), max(i, j))] = s
+        applied += 1
+    store["consistency"] = dump_consistency_map(cons)
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"apply-scores: {applied} edges on {active['topic_id']}")
+
+
+
+def cmd_link(args):
+    """Add a meta-graph edge between two topics."""
+    meta = load_meta()
+    ids = {t["id"] for t in meta.get("topics", [])}
+    if args.src not in ids or args.dst not in ids:
+        raise SystemExit(f"Unknown topic id(s). Known: {sorted(ids)}")
+    if args.src == args.dst:
+        raise SystemExit("Cannot link a topic to itself")
+    score = float(args.score)
+    if score < -1 or score > 1:
+        raise SystemExit("score must be in [-1, 1]")
+    links = meta.setdefault("links", [])
+    # upsert
+    key = (args.src, args.dst)
+    links = [L for L in links if not (L.get("from") == key[0] and L.get("to") == key[1])]
+    links.append({
+        "from": args.src,
+        "to": args.dst,
+        "score": score,
+        "relation": args.relation or "related",
+    })
+    meta["links"] = links
+    save_meta(meta)
+    print(f"link {args.src} --[{args.relation or 'related'}:{score}]--> {args.dst}")
+
+
+def _topic_blob(topic: dict) -> str:
+    parts = [topic.get("id", ""), topic.get("title", ""), topic.get("description", "")]
+    parts += topic.get("tags") or []
+    # sample atoms if present
+    try:
+        store = load_json(topic_atoms_path(topic), {})
+        for a in (store.get("atoms") or [])[:20]:
+            parts.append(a)
+    except Exception:
+        pass
+    return " ".join(parts).lower()
+
+
+def cmd_find(args):
+    """Rank topics by keyword overlap with a query (fast cache routing)."""
+    meta = load_meta()
+    q = set(re.findall(r"[a-z0-9]+", args.query.lower()))
+    if not q:
+        raise SystemExit("Empty query")
+    ranked = []
+    for t in meta.get("topics", []):
+        blob = _topic_blob(t)
+        tokens = set(re.findall(r"[a-z0-9]+", blob))
+        inter = len(q & tokens)
+        if inter == 0:
+            continue
+        score = inter / (len(q) ** 0.5)
+        ranked.append((score, inter, t))
+    ranked.sort(reverse=True)
+    if not ranked:
+        print("No matching topics")
+        return
+    for score, inter, t in ranked[: max(1, args.top)]:
+        print(f"{t['id']}\tscore={score:.2f}\thits={inter}\tatoms={t.get('atom_count', '?')}")
+        print(f"  {t.get('title', '')}")
+
+
+def cmd_cache(args):
+    """Fast cache layer: find topics for query, emit greedy resilient packets."""
+    meta = load_meta()
+    q = set(re.findall(r"[a-z0-9]+", args.query.lower()))
+    ranked = []
+    for t in meta.get("topics", []):
+        blob = _topic_blob(t)
+        tokens = set(re.findall(r"[a-z0-9]+", blob))
+        inter = len(q & tokens)
+        if inter == 0 and not args.all:
+            continue
+        score = inter / max(len(q) ** 0.5, 1)
+        ranked.append((score, inter, t))
+    ranked.sort(reverse=True)
+    if not ranked:
+        print("CACHE MISS — no matching topics. Consider create --use for this theme.")
+        return
+
+    mod = resilience_search
+
+    top = ranked[: max(1, args.topics)]
+    print(f"CACHE HIT — {len(top)} topic(s) for query")
+    for score, inter, t in top:
+        path = topic_atoms_path(t)
+        store = load_json(path, {})
+        atoms = store.get("atoms") or []
+        cons = parse_consistency_map(store)
+        print(f"\n## {t['id']}  (match={score:.2f}, atoms={len(atoms)})")
+        if not atoms:
+            print("  (empty store)")
+            continue
+        selected, eng = mod.greedy_resilient(
+            atoms,
+            cons,
+            max_size=args.max_size,
+            redundancy_scale=args.redundancy_scale,
+        )
+        print(f"  packet E={eng:.3f} size={len(selected)}")
+        for a in selected:
+            print(f"  • {a}")
+        doc = build_packet_doc(
+            t["id"], atoms, selected, eng, "greedy-cache",
+            args.max_size, args.redundancy_scale, query=args.query,
+        )
+        out = write_packet(path, doc)
+        print(f"  wrote {out}")
+
+    # show meta neighbors of top topic
+    links = meta.get("links") or []
+    top_id = top[0][2]["id"]
+    nbrs = [L for L in links if L.get("from") == top_id or L.get("to") == top_id]
+    if nbrs:
+        print("\n## meta neighbors")
+        for L in nbrs:
+            print(f"  {L.get('from')} --[{L.get('relation')}:{L.get('score')}]--> {L.get('to')}")
+
+
+def cmd_meta_graph(_args):
+    """Print meta-graph (topics + links)."""
+    meta = load_meta()
+    print("topics:")
+    for t in meta.get("topics", []):
+        print(f"  - {t['id']}  ({t.get('atom_count', '?')} atoms)  {t.get('title', '')}")
+    print("links:")
+    links = meta.get("links") or []
+    if not links:
+        print("  (none)")
+    for L in links:
+        print(f"  {L.get('from')} --[{L.get('relation')}:{L.get('score')}]--> {L.get('to')}")
+
+
+
+
+
+
+
+def cmd_export(args):
+    """Export active (or named) topic to human-friendly Obsidian markdown."""
+    import importlib.util
+
+    meta = load_meta()
+    topic_id = args.topic
+    if not topic_id:
+        active = get_active()
+        if not active:
+            raise SystemExit("No active topic. Pass --topic or run: use <id>")
+        topic_id = active.get("topic_id") or active.get("id")
+        if not topic_id:
+            raise SystemExit("Active pointer missing topic_id")
+        store_path = Path(active["atoms_path"])
+        title = active.get("title") or topic_id
+        description = ""
+    else:
+        topics = {t["id"]: t for t in meta.get("topics", [])}
+        if topic_id not in topics:
+            raise SystemExit(f"Unknown topic: {topic_id}")
+        tmeta = topics[topic_id]
+        store_path = topic_atoms_path(tmeta)
+        title = tmeta.get("title") or topic_id
+        description = tmeta.get("description") or ""
+
+    # fill description from meta if we used active
+    if not description:
+        for t in meta.get("topics", []):
+            if t.get("id") == topic_id:
+                description = t.get("description") or ""
+                title = t.get("title") or title
+                break
+
+    store = load_json(store_path, {})
+    atoms = store.get("atoms") or []
+    cons_raw = store.get("consistency") or {}
+    if not atoms:
+        raise SystemExit("No atoms to export")
+
+    thr = float(args.min_score)
+
+    def parse_cons(d):
+        out = {}
+        for key, score in d.items():
+            try:
+                i, j = map(int, str(key).split(","))
+                score = float(score)
+            except Exception:
+                continue
+            if 0 <= i < len(atoms) and 0 <= j < len(atoms) and i != j:
+                a, b = (i, j) if i < j else (j, i)
+                out[(a, b)] = score
+        return out
+
+    cons = parse_cons(cons_raw)
+
+    # --- human-readable titles ---
+    def make_title(text: str, idx: int, used: set) -> str:
+        """Short human name for an atom note (not a sentence)."""
+        t = re.sub(r"\s+", " ", text).strip()
+        # Known-pattern shortcuts
+        patterns = [
+            (r"^Constructor theory \(Deutsch/Marletto\) defines knowledge", "Knowledge as constructor (Deutsch/Marletto)"),
+            (r"^Constructor theory itself remains primarily", "Constructor theory still foundational physics"),
+            (r"^Constructor theory still frames knowledge", "Constructor theory vs LLM engineering gap"),
+            (r"^No published work exactly matches", "No exact published match for this approach"),
+            (r"^Closest technical parallel", "QUBO-RAG as closest parallel"),
+            (r"^QUBO-Optimized Evidence Selection for RAG", "QUBO-RAG separates selection from generation"),
+            (r"^QUBO formulations are already being mapped", "QUBO mapped to annealers and SA"),
+            (r"^The skill occupies a relatively open niche", "Skill niche: CT framing plus QUBO cache"),
+            (r"^Multiple active research lines on LLM context", "Other context-compression research lines"),
+            (r"^Training-free hybrid graph-prior", "Hybrid graph-prior context compression"),
+            (r"^Directed Information gamma-covering", "Directed-information gamma-covering"),
+            (r"^An emerging pattern across 2025-2026", "Selection vs generation pattern (2025-26)"),
+            (r"^JEPA \(Joint Embedding", "JEPA: predict in latent space"),
+            (r"^Unlike autoregressive LLMs", "JEPA vs next-token prediction"),
+            (r"^V-JEPA and V-JEPA 2", "V-JEPA video world models"),
+            (r"^V-JEPA-style models can acquire intuitive", "Intuitive physics from V-JEPA"),
+            (r"^Action-conditioned JEPA", "Action-conditioned JEPA planning"),
+            (r"^The dominant practical pattern in 2025-2026 is complementarity", "JEPA–LLM complementarity pattern"),
+            (r"^V-JEPA 2\.1", "V-JEPA 2.1 dense video features"),
+            (r"^LeWorldModel", "LeWorldModel stable end-to-end JEPA"),
+            (r"^LLM-JEPA", "LLM-JEPA embedding objective"),
+            (r"^VL-JEPA", "VL-JEPA predicts text embeddings"),
+            (r"^Hybrid approaches such as JART", "JART hybrid AR + JEPA"),
+            (r"^JEPA-Reasoner", "JEPA-Reasoner decouples latent reasoning"),
+            (r"^I-JEPA", "I-JEPA image representations"),
+        ]
+        for pat, label in patterns:
+            if re.search(pat, t, re.I):
+                t = label
+                break
+        else:
+            for sep in [": ", " — ", " – "]:
+                if sep in t:
+                    head = t.split(sep, 1)[0].strip()
+                    if 8 <= len(head) <= 64:
+                        t = head
+                        break
+            if len(t) > 60:
+                cut = t[:60].rsplit(" ", 1)[0]
+                t = cut if len(cut) >= 16 else t[:60]
+            t = t.rstrip(".,;:")
+        base = t
+        n = 2
+        while t.lower() in used:
+            t = f"{base} ({n})"
+            n += 1
+        used.add(t.lower())
+        return t
+
+    used_titles = set()
+    titles = [make_title(a, i, used_titles) for i, a in enumerate(atoms)]
+
+    def safe_note_name(title: str) -> str:
+        # Same string for [[wikilink]] and filename stem (Obsidian resolution)
+        slug = re.sub(r'[\\/:*?"<>|]', "-", title)
+        slug = re.sub(r"\s+", " ", slug).strip().rstrip(".")
+        return slug
+
+    titles = [safe_note_name(x) for x in titles]
+    filenames = [f"{x}.md" for x in titles]
+
+    # neighbors for each atom
+    neighbors = {i: [] for i in range(len(atoms))}
+    edges = []
+    for (i, j), score in cons.items():
+        if abs(score) < thr:
+            continue
+        neighbors[i].append((j, score))
+        neighbors[j].append((i, score))
+        edges.append((i, j, score))
+    edges.sort(key=lambda x: -abs(x[2]))
+
+    # resilient packet (constructor state)
+    mod = resilience_search
+    packet_atoms, packet_e = mod.greedy_resilient(
+        atoms, cons, max_size=int(args.packet_size), redundancy_scale=2.0
+    )
+    packet_idx = []
+    for p in packet_atoms:
+        for i, a in enumerate(atoms):
+            if a == p:
+                packet_idx.append(i)
+                break
+
+    out_dir = Path(args.out) if args.out else store_path.parent / "export_obsidian"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # clear previous export md files in dir (only our pattern) — keep simple: overwrite
+    # --- Research writeup (main note) ---
+    main_name = f"{title}.md"
+    # sanitize main filename
+    main_name = re.sub(r'[\\/:*?"<>|]', "", main_name)
+
+    lines = []
+    lines += [
+        "---",
+        f'title: "{title}"',
+        f"topic_id: {topic_id}",
+        f"atom_count: {len(atoms)}",
+        "tags: [research, coherence-cache, constructor-resilience]",
+        "---",
+        "",
+        f"# {title}",
+        "",
+    ]
+    if description:
+        lines += [description.strip(), ""]
+
+    lines += [
+        "## Research summary",
+        "",
+        f"This note is a human-readable export of the **{title}** coherence cache. "
+        f"It holds **{len(atoms)} claims** (atoms) linked by consistency scores. "
+        "The *constructor state* below is a compressed resilient packet—what an agent "
+        "would load as high-signal context before continuing work on this theme.",
+        "",
+        "Atoms are durable claims only (not raw chat). Edges mark support or tension; "
+        "near-duplicate claims are discouraged when forming the packet.",
+        "",
+        "## Constructor state (current resilient packet)",
+        "",
+        f"_Greedy packet · size {len(packet_idx)} · energy {packet_e:.2f}_",
+        "",
+    ]
+    if not packet_idx:
+        lines.append("_Empty packet._")
+    else:
+        for n, i in enumerate(packet_idx, 1):
+            lines.append(f"{n}. [[{titles[i]}]] — {atoms[i]}")
+            lines.append("")
+
+    lines += [
+        "## Table of contents",
+        "",
+    ]
+    for i, t in enumerate(titles):
+        marker = " ★" if i in packet_idx else ""
+        lines.append(f"- [[{t}]]{marker}")
+
+    lines += [
+        "",
+        "## How to read the graph",
+        "",
+        "- ★ marks atoms currently in the resilient packet.",
+        f"- Links appear on each atom note when |consistency| ≥ {thr}.",
+        "- Source of truth for agents remains `atoms.json`; this vault is for people.",
+        "",
+        "## Strong relationships",
+        "",
+    ]
+    if not edges:
+        lines.append("_No edges above threshold._")
+    else:
+        for i, j, s in edges[:25]:
+            lines.append(f"- [[{titles[i]}]] — **{s:+.2f}** → [[{titles[j]}]]")
+
+    # External references aggregated from all atoms
+    all_refs = []
+    seen_ref = set()
+    for a in atoms:
+        for r in extract_references(a):
+            if r["url"] not in seen_ref:
+                seen_ref.add(r["url"])
+                all_refs.append(r)
+    lines += ["", "## External references", ""]
+    if not all_refs:
+        lines.append("_No arXiv / DOI / URL references detected in atoms._")
+    else:
+        for r in all_refs:
+            lines.append(f"- [{r['label']}]({r['url']})")
+
+    (out_dir / main_name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # --- Vault landing page (what you see first) ---
+    other_topics = [t for t in meta.get("topics", []) if t.get("id") != topic_id]
+    idx = [
+        "---",
+        'title: "Index"',
+        "tags: [index, moc]",
+        "---",
+        "",
+        "# Index",
+        "",
+        "Welcome. This is an **Obsidian export** of a constructor-resilience coherence cache.",
+        "",
+        "It is a human-readable view of durable research claims (**atoms**), how they support or conflict with each other, and a compressed **constructor state** (resilient packet) an agent would load as context.",
+        "",
+        "## Start here",
+        "",
+        f"1. Open [[{title}]] — research writeup, constructor state, and table of contents for the active topic.",
+        "2. Browse atom notes from that page (named `[[wiki-links]]`).",
+        "3. Agents should still use `atoms.json` as the source of truth; this vault is for people.",
+        "",
+        "## Active topic",
+        "",
+        f"- **Title:** [[{title}]]",
+        f"- **Topic id:** `{topic_id}`",
+        f"- **Atoms:** {len(atoms)}",
+        f"- **Packet size:** {len(packet_idx)}",
+        "",
+    ]
+    if description:
+        idx += [f"> {description.strip()}", ""]
+
+    idx += [
+        "### Constructor state (preview)",
+        "",
+    ]
+    if not packet_idx:
+        idx.append("_No packet._")
+    else:
+        for n, i in enumerate(packet_idx, 1):
+            idx.append(f"{n}. [[{titles[i]}]]")
+        idx.append("")
+
+    idx += [
+        "### All claims in this topic",
+        "",
+    ]
+    for i, tname in enumerate(titles):
+        star = " ★" if i in packet_idx else ""
+        idx.append(f"- [[{tname}]]{star}")
+
+    # --- Mermaid charts for Index ---
+    def mermaid_id(i: int) -> str:
+        return f"A{i}"
+
+    def mermaid_label(title: str, limit: int = 36) -> str:
+        t = title.replace('"', "'")
+        if len(t) > limit:
+            t = t[: limit - 1] + "…"
+        return t
+
+    # Full topic graph (edges >= thr)
+    mm_topic = ["```mermaid", "graph LR"]
+    for i, tname in enumerate(titles):
+        lab = mermaid_label(tname)
+        star = " ★" if i in packet_idx else ""
+        mm_topic.append(f'  {mermaid_id(i)}["{lab}{star}"]')
+    for i, j, s in edges[:40]:
+        if s >= 0.85:
+            mm_topic.append(f"  {mermaid_id(i)} ===|{s:.2f}| {mermaid_id(j)}")
+        else:
+            mm_topic.append(f"  {mermaid_id(i)} ---|{s:.2f}| {mermaid_id(j)}")
+    mm_topic.append("```")
+
+    # Packet-only subgraph
+    mm_pkt = ["```mermaid", "graph LR"]
+    pkt_set = set(packet_idx)
+    for i in packet_idx:
+        lab = mermaid_label(titles[i])
+        mm_pkt.append(f'  {mermaid_id(i)}["{lab}"]')
+    for i, j, s in edges:
+        if i in pkt_set and j in pkt_set:
+            if s >= 0.85:
+                mm_pkt.append(f"  {mermaid_id(i)} ===|{s:.2f}| {mermaid_id(j)}")
+            else:
+                mm_pkt.append(f"  {mermaid_id(i)} ---|{s:.2f}| {mermaid_id(j)}")
+    mm_pkt.append("```")
+
+    # Meta-graph (topics)
+    mm_meta = ["```mermaid", "graph LR"]
+    for t in meta.get("topics", []):
+        tid = t.get("id", "")
+        safe = tid.replace("-", "_")
+        tlab = (t.get("title") or tid).replace('"', "'")
+        if len(tlab) > 40:
+            tlab = tlab[:39] + "…"
+        emphasis = ":::active" if tid == topic_id else ""
+        mm_meta.append(f'  {safe}["{tlab}"]')
+    for L in meta.get("links") or []:
+        a = str(L.get("from", "")).replace("-", "_")
+        b = str(L.get("to", "")).replace("-", "_")
+        rel = str(L.get("relation") or "related")[:24]
+        sc = L.get("score", "")
+        mm_meta.append(f"  {a} ---|{rel} {sc}| {b}")
+    mm_meta.append("```")
+
+    idx += [
+        "",
+        "## Maps",
+        "",
+        "### Constructor state (packet graph)",
+        "",
+        *mm_pkt,
+        "",
+        "### Full topic consistency graph",
+        "",
+        *mm_topic,
+        "",
+        "### Meta-graph (topics)",
+        "",
+        *mm_meta,
+        "",
+        "## What the symbols mean",
+        "",
+        "- **★** — currently in the resilient packet (constructor state)",
+        "- **Atom note** — one durable claim + related claims",
+        f"- **Links** — consistency edges with |score| ≥ {thr}",
+        "- **Mermaid** — rendered by Obsidian (Live Preview / Reading view)",
+        "",
+        "## This vault vs agents",
+        "",
+        "| Audience | Artifact |",
+        "|----------|----------|",
+        "| Humans (Obsidian) | This folder / `Index` |",
+        "| Agents / handoff | `atoms.json` in the topic store |",
+        "",
+    ]
+
+    if other_topics:
+        idx += [
+            "## Other topics in the meta-graph",
+            "",
+            "_Re-run export with `--topic <id>` to generate a vault (or section) for each._",
+            "",
+        ]
+        for t in other_topics:
+            idx.append(
+                f"- `{t.get('id')}` — {t.get('title') or t.get('id')} "
+                f"({t.get('atom_count', '?')} atoms)"
+            )
+        idx.append("")
+
+    links = [L for L in (meta.get("links") or []) if L.get("from") == topic_id or L.get("to") == topic_id]
+    if links:
+        idx += ["## Meta links from this topic", ""]
+        for L in links:
+            idx.append(
+                f"- `{L.get('from')}` —[{L.get('relation')}:{L.get('score')}]→ `{L.get('to')}`"
+            )
+        idx.append("")
+
+    idx += [
+        "---",
+        "",
+        f"_Exported by constructor-resilience · topic `{topic_id}`_",
+        "",
+    ]
+    (out_dir / "Index.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
+
+
+    # --- one note per atom (named) ---
+    for i, a in enumerate(atoms):
+        refs = extract_references(a)
+        body = [
+            "---",
+            f'atom_title: "{titles[i]}"',
+            f"atom_index: {i}",
+            f"topic_id: {topic_id}",
+            f"in_packet: {'true' if i in packet_idx else 'false'}",
+            "tags: [atom]",
+            "---",
+            "",
+            f"# {titles[i]}",
+            "",
+            linkify_claim(a),
+            "",
+        ]
+        if i in packet_idx:
+            body += ["> Part of the current **constructor state** (resilient packet).", ""]
+
+        body += ["## References", ""]
+        if refs:
+            for r in refs:
+                body.append(f"- [{r['label']}]({r['url']})")
+            body.append("")
+        else:
+            body += ["_No external paper/URL detected in this claim._", ""]
+
+        body += ["## Related claims", ""]
+        rel = sorted(neighbors[i], key=lambda x: -abs(x[1]))
+        if not rel:
+            body.append("_No strong links above threshold._")
+        else:
+            for j, s in rel:
+                body.append(f"- [[{titles[j]}]] ({s:+.2f})")
+                body.append(f"  - {linkify_claim(atoms[j])}")
+                body.append("")
+
+        body += [
+            "## Navigation",
+            "",
+            f"← Back to [[{title.replace('.md', '')}]]" if False else f"← Back to [[{title}]]",
+            "",
+        ]
+        # fix backlink title only
+        body[-3] = f"← Back to [[{title}]]"
+
+        fname = filenames[i]
+        # avoid collision with main file
+        if fname.lower() == main_name.lower():
+            fname = f"Atom - {fname}"
+        (out_dir / fname).write_text("\n".join(body) + "\n", encoding="utf-8")
+
+    # Roam outline still useful
+    roam = [f"# {title}", "", f"topic_id:: {topic_id}", "", "## Constructor state", ""]
+    for i in packet_idx:
+        roam.append(f"- [[{titles[i]}]] {atoms[i]}")
+    roam += ["", "## All atoms", ""]
+    for i, a in enumerate(atoms):
+        roam.append(f"- [[{titles[i]}]] {a}")
+        for j, s in sorted(neighbors[i], key=lambda x: -abs(x[1]))[:6]:
+            roam.append(f"  - [[{titles[j]}]] ({s:+.2f})")
+    (out_dir / f"{topic_id}-roam-outline.md").write_text("\n".join(roam) + "\n", encoding="utf-8")
+
+    print(out_dir)
+    print(f"  main={main_name}")
+    print(f"  atom_notes={len(atoms)}  packet={len(packet_idx)}  edges_exported={len(edges)}")
+
+
+
+
+
+def cmd_intersect(args):
+    """Interest intersection: my topic ∩ their topic → packet."""
+    from .intersection import intersection_packet
+    meta = load_meta()
+    def load_topic(tid: str) -> dict:
+        t = next((x for x in meta.get("topics", []) if x["id"] == tid), None)
+        if not t:
+            raise SystemExit(f"Unknown topic: {tid}")
+        path = get_root() / t["path"] / "atoms.json"
+        store = load_json(path)
+        if not store:
+            raise SystemExit(f"Missing store: {path}")
+        return store
+    mine = load_topic(args.mine)
+    theirs = load_topic(args.theirs)
+    doc = intersection_packet(
+        mine,
+        theirs,
+        max_size=args.max_size,
+        min_cross_sim=args.min_sim,
+        seed_query=args.query,
+        redundancy_scale=args.redundancy_scale,
+        require_cross=not args.allow_one_sided,
+    )
+    out = args.out
+    if out:
+        outp = Path(out)
+        save_json(outp, doc)
+        print(f"wrote {outp}")
+    print(
+        f"intersection  E={doc.get('energy')}  size={len(doc.get('atoms') or [])}  "
+        f"mine={doc.get('n_mine')} theirs={doc.get('n_theirs')}"
+    )
+    for i, a in enumerate(doc.get("atoms") or []):
+        src = "?"
+        for p in doc.get("provenance") or []:
+            if p.get("text") == a:
+                src = p.get("source", "?")
+                break
+        print(f"  [{i}] ({src}) {a}")
+
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Constructor-resilience knowledge ops (open coherence cache)",
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help="Store root (default: $COHERENCE_ROOT or ./.coherence)",
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("status", help="Show meta + active topic").set_defaults(func=cmd_status)
+    sub.add_parser("list", help="List topics").set_defaults(func=cmd_list)
+
+    p_use = sub.add_parser("use", help="Zoom into a topic (set active)")
+    p_use.add_argument("topic_id")
+    p_use.set_defaults(func=cmd_use)
+
+    p_create = sub.add_parser("create", help="Create a new topical store")
+    p_create.add_argument("id", nargs="?", help="Topic id (slug); default from title")
+    p_create.add_argument("--title", required=True)
+    p_create.add_argument("--description", default="")
+    p_create.add_argument("--tags", nargs="*", default=[])
+    p_create.add_argument("--use", action="store_true", help="Make active after create")
+    p_create.set_defaults(func=cmd_create)
+
+    sub.add_parser("path", help="Print active atoms.json path").set_defaults(func=cmd_path)
+
+    p_render = sub.add_parser("render", help="Render active topic graph PNG")
+    p_render.set_defaults(func=cmd_render)
+
+    p_add = sub.add_parser("add-atom", help="Append atom text to active store")
+    p_add.add_argument("text")
+    p_add.add_argument(
+        "--auto-score",
+        action="store_true",
+        help="Heuristic pairwise scores vs existing atoms",
+    )
+    p_add.set_defaults(func=cmd_add_atom)
+
+    p_set = sub.add_parser("set-consistency", help="Set pairwise score (i j score)")
+    p_set.add_argument("i", type=int)
+    p_set.add_argument("j", type=int)
+    p_set.add_argument("score", type=float)
+    p_set.set_defaults(func=cmd_set_consistency)
+
+    p_rescore = sub.add_parser("rescore", help="Heuristic rescore all pairs in active store")
+    p_rescore.add_argument("--min-abs", type=float, default=0.05)
+    p_rescore.set_defaults(func=cmd_rescore)
+
+    p_search = sub.add_parser("search", help="Run resilience search on active store")
+    p_search.add_argument("--reads", type=int, default=40)
+    p_search.add_argument("--sweeps", type=int, default=400)
+    p_search.add_argument("--top", type=int, default=3)
+    p_search.add_argument("--select-penalty", type=float, default=-1.0)
+    p_search.add_argument("--redundancy-scale", type=float, default=2.0,
+                          help="Penalty scale for co-selecting lexically similar atoms")
+    p_search.add_argument("--redundancy-threshold", type=float, default=0.22,
+                          help="Min Jaccard similarity to count as redundant")
+    p_search.add_argument("--greedy", action="store_true")
+    p_search.add_argument("--max-size", type=int, default=None)
+    p_search.add_argument("--no-write", action="store_true", help="Do not write packet.json")
+    p_search.set_defaults(func=cmd_search)
+
+
+    p_sn = sub.add_parser("score-new", help="Heuristic-score newest atom vs prior atoms")
+    p_sn.add_argument("--min-abs", type=float, default=0.05)
+    p_sn.set_defaults(func=cmd_score_new)
+
+    p_jp = sub.add_parser("judge-prompt", help="Emit LLM-as-judge scoring prompt")
+    p_jp.add_argument("--new-only", action="store_true")
+    p_jp.add_argument("--max-pairs", type=int, default=30)
+    p_jp.set_defaults(func=cmd_judge_prompt)
+
+    p_as = sub.add_parser("apply-scores", help="Apply JSON scores to active store")
+    p_as.add_argument("--json", default="", help="Inline JSON string")
+    p_as.add_argument("--file", default="", help="Path to JSON file")
+    p_as.add_argument("--min-abs", type=float, default=0.0)
+    p_as.set_defaults(func=cmd_apply_scores)
+
+
+    p_link = sub.add_parser("link", help="Link two topics on the meta-graph")
+    p_link.add_argument("src")
+    p_link.add_argument("dst")
+    p_link.add_argument("--score", type=float, default=0.5)
+    p_link.add_argument("--relation", default="related")
+    p_link.set_defaults(func=cmd_link)
+
+    p_find = sub.add_parser("find", help="Find topics matching a query")
+    p_find.add_argument("query")
+    p_find.add_argument("--top", type=int, default=5)
+    p_find.set_defaults(func=cmd_find)
+
+    p_cache = sub.add_parser("cache", help="Cache layer: packets from topics matching query")
+    p_cache.add_argument("query")
+    p_cache.add_argument("--topics", type=int, default=2, help="Max topics to expand")
+    p_cache.add_argument("--max-size", type=int, default=6)
+    p_cache.add_argument("--redundancy-scale", type=float, default=2.0)
+    p_cache.add_argument("--all", action="store_true", help="Include zero-overlap topics")
+    p_cache.set_defaults(func=cmd_cache)
+
+    sub.add_parser("meta", help="Show meta-graph topics and links").set_defaults(func=cmd_meta_graph)
+    p_packet = sub.add_parser("packet", help="Show or rebuild packet.json for active topic")
+    p_packet.add_argument("--rebuild", action="store_true")
+    p_packet.add_argument("--max-size", type=int, default=6)
+    p_packet.set_defaults(func=cmd_packet)
+
+
+    
+    p_ix = sub.add_parser(
+        "intersect",
+        help="Interest intersection: my topic ∩ their topic (realtime browse primitive)",
+    )
+    p_ix.add_argument("mine", help="My topic id (interest surface)")
+    p_ix.add_argument("theirs", help="Their topic id (public or shared surface)")
+    p_ix.add_argument("--max-size", type=int, default=8)
+    p_ix.add_argument("--min-sim", type=float, default=0.18, help="Min cross-surface lexical affinity")
+    p_ix.add_argument("--query", default=None, help="Optional seed query to reweight browse")
+    p_ix.add_argument("--redundancy-scale", type=float, default=2.0)
+    p_ix.add_argument("--allow-one-sided", action="store_true")
+    p_ix.add_argument("--out", default=None, help="Write intersection packet JSON")
+    p_ix.set_defaults(func=cmd_intersect)
+
+    p_export = sub.add_parser("export", help="Export topic to Obsidian/Roam markdown")
+    p_export.add_argument("--topic", default=None, help="Topic id (default: active)")
+    p_export.add_argument("--out", default=None, help="Output directory")
+    p_export.add_argument("--min-score", type=float, default=0.55, help="Min |consistency| for links")
+    p_export.add_argument("--packet-size", type=int, default=6, help="Resilient packet size for writeup")
+    p_export.set_defaults(func=cmd_export)
+
+    args = parser.parse_args(argv)
+    set_root(args.root)
+    ensure_meta()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

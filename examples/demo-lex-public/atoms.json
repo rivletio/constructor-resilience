@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "Synthetic public creator surface (illustrative Lex-class publish, not real Lex content)",
+  "created": "2026-08-16T00:00:00Z",
+  "updated": "2026-08-16T00:00:00Z",
+  "atoms": [
+    "Long-form conversation is a tool for exploring hard ideas in public.",
+    "Interest in consciousness, AI, and the nature of understanding.",
+    "Guest conversations often cite papers and primary sources as shared ground.",
+    "Publishing a durable claim is different from publishing every raw take.",
+    "Listeners should be able to meet creators at the intersection of mutual curiosity."
+  ],
+  "consistency": {
+    "0,1": 0.7,
+    "0,2": 0.55,
+    "1,2": 0.75,
+    "1,3": 0.6,
+    "1,4": 0.85,
+    "3,4": 0.7,
+    "0,4": 0.5
+  }
+}
