@@ -83,17 +83,27 @@ def build_intersection_pool(
         # Soft positive support for related interests across people
         cons[(a, b)] = max(cons.get((a, b), 0.0), min(0.9, 0.35 + 0.7 * s))
 
-    # Seed query: boost atoms that mention query tokens
+    # Seed query: boost atoms that mention query tokens via pairwise glue
+    # to a virtual high-coverage hub (implemented as extra self-preference
+    # through strong edges among seed-matching atoms).
     if seed_query:
         q = seed_query.lower()
-        q_tokens = set(q.split())
+        q_tokens = [t for t in q.split() if len(t) > 2]
+        seed_hits = []
         for idx, atom in enumerate(pool):
             al = atom.lower()
-            hit = sum(1 for t in q_tokens if len(t) > 2 and t in al)
+            hit = sum(1 for t in q_tokens if t in al)
             if hit:
-                # mild self-bias via coupling to a synthetic "seed" is hard in
-                # pure QUBO without extra node; instead annotate provenance.
-                pass
+                seed_hits.append((idx, hit))
+        # Link seed-matching atoms together with positive support so greedy
+        # prefers them as a cluster (realtime dial sensitivity).
+        for i in range(len(seed_hits)):
+            for j in range(i + 1, len(seed_hits)):
+                a, ha = seed_hits[i]
+                b, hb = seed_hits[j]
+                lo, hi = (a, b) if a < b else (b, a)
+                boost = min(0.95, 0.45 + 0.15 * (ha + hb))
+                cons[(lo, hi)] = max(cons.get((lo, hi), 0.0), boost)
 
     provenance = []
     for i, a in enumerate(mine):

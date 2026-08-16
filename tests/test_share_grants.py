@@ -1,0 +1,58 @@
+"""Grant enforcement: sealed vs forwardable shares."""
+
+from coherence_cache.share import can_forward, make_share, re_share
+
+
+def test_direct_forward_none_blocks_reshare():
+    s = make_share(
+        from_id="dan",
+        to_id="alice",
+        atoms=["Private essay for Alice only."],
+        audience="direct",
+        forward="none",
+    )
+    # make_share may already force forward none for direct
+    s["forward"] = "none"
+    ok, reason = can_forward(s, as_user="alice", to_audience="circle")
+    assert not ok
+    assert reason == "forward_none"
+    try:
+        re_share(s, from_id="alice", to_id="carol", audience="circle")
+        assert False, "should raise"
+    except ValueError as e:
+        assert "forward_none" in str(e)
+
+
+def test_forwardable_allows_circle_hop_no_escalate():
+    s = make_share(
+        from_id="dan",
+        to_id="alice",
+        atoms=["Lex episode https://www.youtube.com/watch?v=l6USUAIKJls"],
+        audience="direct",
+        forward="circle",
+    )
+    # product rule: direct + forward=circle means Alice may re-share to circle
+    s["forward"] = "circle"
+    s["audience"] = "direct"
+    ok, reason = can_forward(s, as_user="alice", to_audience="circle")
+    assert ok, reason
+    hop = re_share(s, from_id="alice", to_id="carol", audience="circle")
+    assert hop["from"] == "alice"
+    assert hop["to"] == "carol"
+    # cannot escalate to public
+    ok_pub, reason_pub = can_forward(s, as_user="alice", to_audience="public")
+    assert not ok_pub
+    assert "public" in reason_pub
+
+
+def test_content_refs_extracted():
+    s = make_share(
+        from_id="dan",
+        to_id="alice",
+        atoms=["See https://www.youtube.com/watch?v=abcdefghijk for more"],
+        audience="circle",
+        forward="none",
+    )
+    refs = s.get("content_refs") or []
+    assert len(refs) == 1
+    assert refs[0].get("youtube_video_id") == "abcdefghijk"
