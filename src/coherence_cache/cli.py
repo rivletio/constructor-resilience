@@ -25,6 +25,15 @@ from pathlib import Path
 from .paths import get_root, set_root, ensure_meta, meta_path, active_path
 from . import refs_util as _refs_mod
 from . import search as resilience_search
+from .atoms import (
+    REVIEW_ACCEPTED,
+    REVIEW_PENDING,
+    active_atoms,
+    atom_text,
+    atom_texts,
+    make_atom,
+    normalize_store_atoms,
+)
 
 extract_references = _refs_mod.extract_references
 linkify_claim = _refs_mod.linkify_claim
@@ -236,9 +245,9 @@ def token_set(s: str) -> set:
     return set(re.findall(r"[a-z0-9]+", s.lower()))
 
 
-def heuristic_pair_score(a: str, b: str) -> float:
+def heuristic_pair_score(a, b) -> float:
     """Cheap lexical overlap heuristic in [-0.2, 0.85]. Not a substitute for LLM judgment."""
-    ta, tb = token_set(a), token_set(b)
+    ta, tb = token_set(atom_text(a)), token_set(atom_text(b))
     if not ta or not tb:
         return 0.0
     inter = len(ta & tb)
@@ -270,9 +279,21 @@ def cmd_render(args):
 
 def cmd_add_atom(args):
     active, path, store = load_active_store()
-    atom = args.text.strip()
-    if not atom:
+    text = args.text.strip()
+    if not text:
         raise SystemExit("Empty atom")
+    # Structured by default so review/provenance works; --plain keeps legacy string.
+    if getattr(args, "plain", False):
+        atom = text
+        status = REVIEW_ACCEPTED
+    else:
+        status = REVIEW_ACCEPTED if getattr(args, "accepted", False) else REVIEW_PENDING
+        atom = make_atom(
+            text,
+            method="manual",
+            source="add-atom",
+            review_status=status,
+        )
     atoms = store.setdefault("atoms", [])
     atoms.append(atom)
     idx = len(atoms) - 1
@@ -286,10 +307,139 @@ def cmd_add_atom(args):
     store["updated"] = now_iso()
     save_json(path, store)
     refresh_topic_counts(active["topic_id"])
-    print(f"Added atom #{idx} to {active['topic_id']}")
+    print(f"Added atom #{idx} to {active['topic_id']} [{status}]")
     if args.auto_score:
         linked = sum(1 for (i, j) in cons if j == idx or i == idx)
         print(f"  auto-score edges involving new atom: {linked}")
+
+
+def cmd_mint(args):
+    """Mint durable atoms from source text/file via local MLX (pending review)."""
+    from . import mint as mint_mod
+    from . import mlx_backend
+
+    active, path, store = load_active_store()
+    if args.ensure_model:
+        mid = mlx_backend.ensure_model(args.model)
+        print(f"model ready: {mid}")
+    if args.file:
+        source = Path(args.file).expanduser().read_text(encoding="utf-8")
+        source_label = str(Path(args.file))
+    else:
+        source = args.text or ""
+        source_label = "stdin/arg"
+    if not source.strip():
+        raise SystemExit("mint requires --text or --file")
+    result = mint_mod.mint_from_text(
+        source,
+        theme=args.theme or active.get("title"),
+        max_atoms=args.max_atoms,
+        model=args.model,
+        existing=store.get("atoms") or [],
+    )
+    atoms = store.setdefault("atoms", [])
+    cons = parse_consistency_map(store)
+    added = 0
+    for rec in result["atoms"]:
+        if args.auto_accept:
+            rec["review"]["status"] = REVIEW_ACCEPTED
+            rec["review"]["reviewed_at"] = now_iso()
+        atoms.append(rec)
+        idx = len(atoms) - 1
+        added += 1
+        if args.auto_score and idx > 0:
+            for i in range(idx):
+                s = heuristic_pair_score(atoms[i], rec)
+                if abs(s) >= 0.05:
+                    cons[(i, idx)] = s
+        print(f"  [{idx}] {atom_text(rec)}")
+    if args.auto_score:
+        store["consistency"] = dump_consistency_map(cons)
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(
+        f"Minted {added} pending atom(s) via {result['model']} "
+        f"from {source_label} → review with: coherence review --serve"
+    )
+
+
+def cmd_review(args):
+    """Open slick local HTML reviewer for provenance + keep/edit/reject."""
+    from .review_server import serve
+
+    active, path, store = load_active_store()
+    store = normalize_store_atoms(store)
+    save_json(path, store)
+
+    def on_change():
+        refresh_topic_counts(active["topic_id"])
+
+    if args.apply_only:
+        print(f"normalized {path} ({len(store.get('atoms') or [])} atoms)")
+        return
+    serve(
+        Path(path),
+        active["topic_id"],
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_browser,
+        on_change=on_change,
+    )
+
+
+def cmd_eval(args):
+    """Score packet usefulness on arbitrary queries (local MLX)."""
+    from . import eval_queries as eq
+    from . import mlx_backend
+
+    active, path, store = load_active_store()
+    queries = eq.load_queries(
+        Path(args.queries) if args.queries else None,
+        list(args.query or []),
+    )
+    if not queries:
+        raise SystemExit("Pass --query and/or --queries file")
+    if args.ensure_model:
+        print(f"model ready: {mlx_backend.ensure_model(args.model)}")
+    # Prefer existing packet.json atoms if present and not --rebuild-packet
+    packet = None
+    packet_path = Path(path).with_name("packet.json")
+    if packet_path.exists() and not args.rebuild_packet:
+        doc = load_json(packet_path, {}) or {}
+        packet = list(doc.get("atoms") or [])
+        if packet and isinstance(packet[0], dict):
+            packet = atom_texts(packet)
+    report = eq.eval_queries(
+        queries,
+        store,
+        packet=packet,
+        max_size=args.max_size,
+        model=args.model,
+    )
+    out = Path(args.out) if args.out else Path(path).with_name("eval_report.json")
+    save_json(out, report)
+    print(f"wrote {out}")
+    print(
+        f"queries={report['n_queries']}  "
+        f"mean_grounded={report['mean_grounded']}  "
+        f"mean_coverage={report['mean_coverage']}  "
+        f"insufficient={report['n_insufficient']}  "
+        f"packet={len(report.get('packet') or [])}"
+    )
+    for i, row in enumerate(report.get("results") or []):
+        g = row.get("grounded")
+        c = row.get("coverage")
+        flag = "∅" if row.get("insufficient") else "✓"
+        print(f"  [{i}] {flag} g={g} c={c}  {row['query'][:80]}")
+
+
+def cmd_ensure_model(args):
+    from . import mlx_backend
+
+    mid = mlx_backend.ensure_model(args.model)
+    print(f"ready: {mid}")
+    print(f"backend: mlx_lm  available={mlx_backend.available()}")
 
 
 def cmd_set_consistency(args):
@@ -343,11 +493,12 @@ def build_packet_doc(
     query: str | None = None,
 ) -> dict:
     """First-class packet artifact for agent/person handoff."""
-    # map selected texts back to indices (stable order of selection)
+    texts = atom_texts(atoms)
+    selected_texts = [atom_text(s) for s in selected]
     indices = []
-    for s in selected:
+    for s in selected_texts:
         try:
-            indices.append(atoms.index(s))
+            indices.append(texts.index(s))
         except ValueError:
             continue
     return {
@@ -361,9 +512,35 @@ def build_packet_doc(
         "redundancy_scale": float(redundancy_scale),
         "query": query,
         "atom_indices": indices,
-        "atoms": list(selected),
+        "atoms": selected_texts,
         "atom_count_source": len(atoms),
     }
+
+
+def _search_atoms(store: dict) -> list[str]:
+    """Non-rejected atom texts for search/packet (HOW review gates the graph)."""
+    return atom_texts(active_atoms(store))
+
+
+def _active_consistency(store: dict) -> dict:
+    """Remap consistency edges onto the active-only atom list."""
+    from .atoms import is_active
+
+    full = store.get("atoms") or []
+    old_to_new = {}
+    n = 0
+    for i, a in enumerate(full):
+        if is_active(a):
+            old_to_new[i] = n
+            n += 1
+    cons = {}
+    for (i, j), s in parse_consistency_map(store).items():
+        if i in old_to_new and j in old_to_new:
+            a, b = old_to_new[i], old_to_new[j]
+            if a > b:
+                a, b = b, a
+            cons[(a, b)] = s
+    return cons
 
 
 def write_packet(store_path: Path, doc: dict) -> Path:
@@ -379,14 +556,15 @@ def cmd_packet(args):
     path = Path(path)
     packet_path = path.with_name("packet.json")
     if args.rebuild or not packet_path.exists():
-        # rebuild via greedy
+        # rebuild via greedy (accepted/pending/edited only — not rejected)
         atoms = store.get("atoms") or []
-        if not atoms:
+        texts = _search_atoms(store)
+        if not texts:
             raise SystemExit("No atoms")
         mod = resilience_search
-        cons = parse_consistency_map(store)
+        cons = _active_consistency(store)
         selected, eng = mod.greedy_resilient(
-            atoms, cons, max_size=args.max_size, redundancy_scale=2.0
+            texts, cons, max_size=args.max_size, redundancy_scale=2.0
         )
         topic_id = active.get("id") or active.get("topic_id") or path.parent.name
         doc = build_packet_doc(
@@ -406,8 +584,9 @@ def cmd_packet(args):
 def cmd_search(args):
     active, path, store = load_active_store()
     atoms = store.get("atoms", [])
-    cons = parse_consistency_map(store)
-    if not atoms:
+    texts = _search_atoms(store)
+    cons = _active_consistency(store)
+    if not texts:
         raise SystemExit("Active store has no atoms")
 
     mod = resilience_search
@@ -419,7 +598,7 @@ def cmd_search(args):
 
     if args.greedy:
         selected, eng = mod.greedy_resilient(
-            atoms,
+            texts,
             cons,
             max_size=args.max_size,
             select_penalty=args.select_penalty,
@@ -439,7 +618,7 @@ def cmd_search(args):
         return
 
     ranked = mod.find_resilient_constructors(
-        atoms,
+        texts,
         cons,
         select_penalty=args.select_penalty,
         num_reads=args.reads,
@@ -497,7 +676,7 @@ def cmd_judge_prompt(args):
         pairs = mod.pairs_for_new_atom(len(atoms) - 1, len(atoms) - 1)
     else:
         pairs = mod.all_pairs(len(atoms))
-    print(mod.format_judge_batch(atoms, pairs, max_pairs=args.max_pairs))
+    print(mod.format_judge_batch(atom_texts(atoms), pairs, max_pairs=args.max_pairs))
 
 
 def cmd_apply_scores(args):
@@ -1227,7 +1406,70 @@ def main(argv=None):
         action="store_true",
         help="Heuristic pairwise scores vs existing atoms",
     )
+    p_add.add_argument(
+        "--plain",
+        action="store_true",
+        help="Store as legacy plain string (no provenance/review)",
+    )
+    p_add.add_argument(
+        "--accepted",
+        action="store_true",
+        help="Mark review status accepted (default: pending)",
+    )
     p_add.set_defaults(func=cmd_add_atom)
+
+    p_mint = sub.add_parser(
+        "mint",
+        help="Mint durable atoms from text/file via local MLX (pending review)",
+    )
+    p_mint.add_argument("--text", default="", help="Source text to atomize")
+    p_mint.add_argument("--file", help="Source file path")
+    p_mint.add_argument("--theme", help="Theme focus for minting")
+    p_mint.add_argument("--max-atoms", type=int, default=12)
+    p_mint.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
+    p_mint.add_argument("--ensure-model", action="store_true", help="Download/load model first")
+    p_mint.add_argument("--auto-score", action="store_true")
+    p_mint.add_argument(
+        "--auto-accept",
+        action="store_true",
+        help="Skip pending review (not recommended)",
+    )
+    p_mint.set_defaults(func=cmd_mint)
+
+    p_rev = sub.add_parser(
+        "review",
+        help="Slick local HTML UI to accept/edit/reject atoms (+ provenance)",
+    )
+    p_rev.add_argument("--serve", action="store_true", default=True, help="Start review server")
+    p_rev.add_argument("--host", default="127.0.0.1")
+    p_rev.add_argument("--port", type=int, default=8765)
+    p_rev.add_argument("--no-browser", action="store_true")
+    p_rev.add_argument(
+        "--apply-only",
+        action="store_true",
+        help="Normalize atoms.json to structured records without serving",
+    )
+    p_rev.set_defaults(func=cmd_review)
+
+    p_eval = sub.add_parser(
+        "eval",
+        help="Eval packet quality on arbitrary queries (local MLX judge)",
+    )
+    p_eval.add_argument("--query", action="append", default=[], help="Query (repeatable)")
+    p_eval.add_argument("--queries", help="File with one query per line")
+    p_eval.add_argument("--max-size", type=int, default=8, help="Packet size if rebuilding")
+    p_eval.add_argument("--rebuild-packet", action="store_true")
+    p_eval.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
+    p_eval.add_argument("--ensure-model", action="store_true")
+    p_eval.add_argument("--out", help="Write report JSON (default: eval_report.json beside atoms)")
+    p_eval.set_defaults(func=cmd_eval)
+
+    p_em = sub.add_parser(
+        "ensure-model",
+        help="Download/load default MLX model (Qwen3-8B-4bit)",
+    )
+    p_em.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
+    p_em.set_defaults(func=cmd_ensure_model)
 
     p_set = sub.add_parser("set-consistency", help="Set pairwise score (i j score)")
     p_set.add_argument("i", type=int)

@@ -1,48 +1,77 @@
 ---
 name: constructor-resilience
-description: Agent coherence-cache and interest packets. Compress durable claims into topical atoms; build resilient packets; intersect interest surfaces for handoff and multi-session continuity. Use when caching research, sharing intentional context (not whole vaults), browsing interest overlap, or preparing packets for Ikonic/other hosts.
+description: >
+  Agent coherence-cache: mint durable atoms with provenance, review them, build
+  resilient packets, and eval packets on arbitrary queries. Use when caching
+  research, handoff, interest intersection, atom review, minting claims, or
+  measuring packet quality. Triggers on coherence cache, atoms, mint atoms,
+  review atoms, packet eval, constructor resilience, interest intersection.
 ---
 
 # Constructor Resilience (Grok skill)
 
-Thin client of the open **`constructor-resilience`** package.
+Thin client of the open package at  
+`/Users/danielgray/Work/Rivlet/products/constructor-resilience`.
 
-**Product framing:** share *interest surfaces*, not everything. Resume from *packets*. Intersect surfaces to browse mutual curiosity. Ikonic is the full-stack host; this skill is the agent-side cache and handoff tool.
+**Product framing:** share *interest surfaces*, not everything. Resume from *packets*.  
+**Atom law:** *how* we mint matters — every minted claim carries provenance and starts **pending review**.
 
 ## Setup
 
 ```bash
-pip install -e /path/to/constructor-resilience
+cd /Users/danielgray/Work/Rivlet/products/constructor-resilience
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev,mlx]"
 export COHERENCE_ROOT="${COHERENCE_ROOT:-$PWD/.coherence}"
-# Optional: Ikonic vault
+# Optional Ikonic vault:
 # export COHERENCE_ROOT="$HOME/.ikonic/vault/coherence"
+export PATH="$PWD/.venv/bin:$PATH"
 ```
 
-CLI entry: `coherence` (alias `knowledge_ops`).
+CLI: `coherence` (alias `knowledge_ops`).
+
+Default local model: **`mlx-community/Qwen3-8B-4bit`** (Qwen3 8B MLX).  
+Override: `COHERENCE_MLX_MODEL=…`
 
 ## Protocol
 
 ### Session start
-1. `coherence cache "theme or question"` or `coherence use <topic-id>`
-2. Load **packet** as privileged context before new research
+1. `coherence cache "theme"` or `coherence use <topic-id>`
+2. Load **packet** as privileged context
 3. Continue; only durable net-new claims become atoms
 
-### During work
-1. `coherence add-atom "…"` (+ judgment scores when possible)
-2. `coherence search --greedy --max-size 6` to refresh packet
-3. Link related topics: `coherence link a b`
-
-### Interest intersection (browse)
+### Mint (HOW we make atoms)
 ```bash
-coherence intersect my-surface their-public --query "consciousness" --max-size 8
+coherence ensure-model
+coherence mint --file ./notes.md --theme "…" --auto-score
+# atoms land as review.status=pending with model + source excerpt
 ```
 
-### Handoff
-Share `topics/<id>/atoms.json` + `packet.json` — not the chat transcript.
+### Review (slick UI)
+```bash
+coherence review --serve    # http://127.0.0.1:8765
+```
+Accept / edit / reject. Rejected atoms stay for audit but leave packets.
 
-## Circles (always)
-- **Inner personal** claims stay out of public topics unless intentional promote  
+### Eval (arbitrary queries)
+```bash
+coherence eval \
+  --query "What did we decide about X?" \
+  --query "How does Y relate to Z?" \
+  --ensure-model
+# → eval_report.json (grounded + coverage scores)
+```
+
+### Packet / handoff
+```bash
+coherence search --greedy --max-size 6
+coherence packet --rebuild
+# Share topics/<id>/atoms.json + packet.json
+```
+
+## Circles
+- Inner personal claims stay out of public topics unless intentional promote  
 - Intersection only uses surfaces each party chose to expose  
 
 ## Docs
-Upstream: package `SPEC.md`, `docs/HOSTS.md`, `docs/USER_MANUAL.md`
+Upstream: `SPEC.md`, `docs/HOSTS.md`, `docs/USER_MANUAL.md`, `README.md`

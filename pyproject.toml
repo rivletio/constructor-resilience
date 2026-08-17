@@ -29,7 +29,9 @@ dependencies = []
 
 [project.optional-dependencies]
 viz = ["matplotlib>=3.7", "networkx>=3.0"]
+mlx = ["mlx-lm>=0.22"]
 dev = ["pytest>=7.0"]
+all = ["matplotlib>=3.7", "networkx>=3.0", "mlx-lm>=0.22", "pytest>=7.0"]
 
 [project.scripts]
 coherence = "coherence_cache.cli:main"

@@ -62,7 +62,22 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
   "updated": "…",
   "atoms": [
     "Durable claim one.",
-    "Durable claim two with optional https://example.com/ref"
+    {
+      "text": "Durable claim two with optional https://example.com/ref",
+      "provenance": {
+        "method": "mlx_mint",
+        "model": "mlx-community/Qwen3-8B-4bit",
+        "source": "source_text",
+        "source_excerpt": "…",
+        "created": "2026-08-17T00:00:00Z",
+        "prompt_sha256": "abc123"
+      },
+      "review": {
+        "status": "pending",
+        "reviewed_at": null,
+        "notes": ""
+      }
+    }
   ],
   "consistency": {
     "0,1": 0.8,
@@ -73,11 +88,16 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 
 | Field | Rule |
 |-------|------|
-| `atoms` | Ordered list of strings; index is stable for edges |
+| `atoms` | Ordered list of **strings or objects**; index is stable for edges |
+| `atoms[].text` | When object: the claim string (search/packet use this) |
+| `atoms[].provenance` | **HOW it was made** — method, model, source, excerpt (required for mint) |
+| `atoms[].review.status` | `pending` \| `accepted` \| `edited` \| `rejected` |
 | `consistency` | Keys `"i,j"` with `i < j`; scores in **[-1, 1]** |
 | Sparse edges | Omit near-zero; prefer judgment over pure keywords |
 
 **Atom quality law:** only claims worth carrying forward — not ambient chat, not fixture junk.
+
+**Review law:** minted atoms start `pending`. Rejected atoms stay for audit but are excluded from packets/search. Plain strings are treated as `accepted` (legacy).
 
 ---
 

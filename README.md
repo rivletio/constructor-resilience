@@ -35,10 +35,32 @@ pip install -e ".[viz]"
 export COHERENCE_ROOT=./.coherence   # or pass --root
 coherence status                     # creates empty meta-store on first run
 coherence create --title "My AI interests" --use
-coherence add-atom "I care about world models and non-generative prediction." --auto-score
-coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score
+coherence add-atom "I care about world models and non-generative prediction." --auto-score --accepted
+coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score --accepted
 coherence search --greedy --max-size 6
 coherence packet
+```
+
+### Mint → review → eval (local MLX)
+
+Default model: **`mlx-community/Qwen3-8B-4bit`** (Qwen3 8B on Apple Silicon).
+
+```bash
+# one-time download / warm
+coherence ensure-model
+
+# HOW we make atoms: local mint with provenance (status=pending)
+coherence mint --file ./notes.md --theme "world models" --ensure-model --auto-score
+
+# Slick HTML reviewer — accept / edit / reject
+coherence review --serve   # http://127.0.0.1:8765
+
+# How well does the packet answer arbitrary questions?
+coherence eval \
+  --query "What is JEPA?" \
+  --query "How do we share interest without vault dumps?" \
+  --ensure-model
+# → topics/<id>/eval_report.json
 ```
 
 ### Interest intersection
