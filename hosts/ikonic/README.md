@@ -66,6 +66,12 @@ subsystems/coherence/   # or vault helpers under core/storage
 
 Python dependency: `constructor-resilience` (this package) for search + intersect; Rust may later reimplement the energy model for native FREE.
 
+## Voice / text inference fast path
+
+Scorecard + phased plan: **[VOICE_FAST_PATH_EVAL.md](./VOICE_FAST_PATH_EVAL.md)**.
+
+**Short version:** packets are **Knowledge FREE** (mid-ladder), not verb FREE. Mint/critique stay offline; turn path is packet lookup → speak or fall through → residual grounded with packet leftovers.
+
 ## Classical web compatibility
 
 - Atom text may include URLs (episodes, papers).  
