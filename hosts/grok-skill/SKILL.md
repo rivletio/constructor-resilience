@@ -47,6 +47,11 @@ coherence mint --file ./notes.md --theme "…" --auto-score
 # atoms land as review.status=pending with model + source excerpt
 ```
 
+### Critique (pre-human)
+```bash
+coherence critique --source-file ./notes.md --apply
+```
+
 ### Review (slick UI)
 ```bash
 coherence review --serve    # http://127.0.0.1:8765

@@ -16,9 +16,12 @@ but leave packets and search.
 
 ```
 source text/file
-    │  coherence mint  (MLX Qwen3-8B-4bit by default)
+    │  coherence mint  (MLX; grounding gate)
     ▼
 atoms.json  [status=pending, provenance=…]
+    │  coherence critique [--apply]
+    ▼
+critique proposals on atoms (+ gated auto accept/reject)
     │  coherence review --serve
     ▼
 accepted / edited / rejected
@@ -27,8 +30,10 @@ accepted / edited / rejected
 packet.json
     │  coherence eval --query …
     ▼
-eval_report.json  (grounded + coverage on arbitrary questions)
+eval_report.json
 ```
+
+Config lives in `coherence_cache.config.CoherenceConfig` (env: `COHERENCE_*`).
 
 ## Model
 

@@ -20,22 +20,28 @@ from .atoms import (
     mint_prompt,
     parse_minted_list,
 )
+from .config import CFG, CoherenceConfig
 
 
 def mint_from_text(
     source_text: str,
     *,
     theme: str | None = None,
-    max_atoms: int = 12,
+    max_atoms: int | None = None,
     model: str | None = None,
     existing: list | None = None,
-    min_grounding: float = 0.55,
+    min_grounding: float | None = None,
+    cfg: CoherenceConfig = CFG,
 ) -> dict[str, Any]:
     """Run local MLX mint; return {atoms, dropped, raw, model, prompt}.
 
     Post-filter drops invented claims that fail the grounding gate so
     review starts from source-faithful candidates.
     """
+    max_atoms = cfg.mint_max_atoms if max_atoms is None else max_atoms
+    min_grounding = (
+        cfg.mint_min_grounding if min_grounding is None else min_grounding
+    )
     prompt = mint_prompt(source_text, theme=theme, max_atoms=max_atoms)
     if existing:
         prior = "\n".join(f"- {atom_text(a)}" for a in existing[:40])
@@ -44,9 +50,9 @@ def mint_from_text(
     out = mlx_backend.generate(
         prompt,
         system=MINT_SYSTEM,
-        model=model,
-        max_tokens=1200,
-        temp=0.1,
+        model=model or cfg.mlx_model,
+        max_tokens=cfg.mint_max_tokens,
+        temp=cfg.mint_temp,
     )
     texts = parse_minted_list(out["text"])
     seen = {atom_text(a).lower() for a in (existing or [])}

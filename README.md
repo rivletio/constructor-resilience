@@ -52,7 +52,10 @@ coherence ensure-model
 # HOW we make atoms: local mint with provenance (status=pending)
 coherence mint --file ./notes.md --theme "world models" --ensure-model --auto-score
 
-# Slick HTML reviewer — accept / edit / reject
+# Pre-human critique (proposals; --apply auto-accept/reject on confidence+grounding)
+coherence critique --source-file ./notes.md --apply
+
+# Slick HTML reviewer — accept / edit / reject (shows critique chips)
 coherence review --serve   # http://127.0.0.1:8765
 
 # How well can the store answer arbitrary questions? (query-aware packets)

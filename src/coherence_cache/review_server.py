@@ -178,11 +178,16 @@ function renderCards() {
     const st = a.review?.status || "accepted";
     const method = a.provenance?.method || "?";
     const model = (a.provenance?.model || "").split("/").pop() || "";
+    const crit = a.review?.critique;
+    const critTag = crit
+      ? `<span class="tag ${crit.action==="reject"?"rejected":crit.action==="accept"?"accepted":"pending"}">critique:${crit.action} ${Number(crit.confidence||0).toFixed(2)}</span>`
+      : "";
     return `<div class="card ${state.sel===i?"sel":""}" data-i="${i}">
       <div class="meta">
         <span class="tag ${st}">#${i} ${st}</span>
         <span class="tag">${method}</span>
         ${model ? `<span class="tag">${model}</span>` : ""}
+        ${critTag}
       </div>
       <p>${escapeHtml(a.text || "")}</p>
     </div>`;
@@ -212,6 +217,15 @@ function renderDetail() {
     `created:${p.created || "—"}`,
     p.source_excerpt ? `\nexcerpt:\n${p.source_excerpt}` : "",
   ].join("\n");
+  const crit = a.review?.critique;
+  const critBlock = crit ? [
+    `action: ${crit.action}`,
+    `confidence: ${crit.confidence}`,
+    `grounding: ${crit.grounding ?? "—"}`,
+    `reason: ${crit.reason || "—"}`,
+    crit.proposed_text && crit.proposed_text !== a.text
+      ? `\nproposed:\n${crit.proposed_text}` : "",
+  ].join("\n") : "";
   el.innerHTML = `
     <div class="meta">
       <span class="tag">#${i}</span>
@@ -221,6 +235,7 @@ function renderDetail() {
     <textarea id="edit">${escapeHtml(a.text||"")}</textarea>
     <label class="stat">How it was made</label>
     <div class="prov">${escapeHtml(prov)}</div>
+    ${critBlock ? `<label class="stat">Critique proposal</label><div class="prov">${escapeHtml(critBlock)}</div>` : ""}
     <label class="stat">Review notes</label>
     <textarea id="notes" style="min-height:70px">${escapeHtml(a.review?.notes||"")}</textarea>
     <div class="actions">

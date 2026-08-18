@@ -1,26 +1,15 @@
-"""Local MLX generation for atom mint + query eval.
-
-Default model: ``mlx-community/Qwen3-8B-4bit`` (Qwen3 8B on Apple Silicon).
-
-Env:
-  COHERENCE_MLX_MODEL   — HF repo id (default above)
-  COHERENCE_MLX_MAX_TOKENS — default 1024
-"""
+"""Local MLX generation for atom mint / critique / eval."""
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from typing import Any
 
-DEFAULT_MODEL = os.environ.get(
-    "COHERENCE_MLX_MODEL",
-    "mlx-community/Qwen3-8B-4bit",
-)
+from .config import CFG
 
 
 def model_id() -> str:
-    return os.environ.get("COHERENCE_MLX_MODEL", DEFAULT_MODEL)
+    return CFG.mlx_model
 
 
 @lru_cache(maxsize=2)
@@ -48,12 +37,13 @@ def generate(
     *,
     system: str | None = None,
     max_tokens: int | None = None,
-    temp: float = 0.2,
+    temp: float | None = None,
     model: str | None = None,
 ) -> dict:
     """Generate text; returns {text, model, backend}."""
-    mid = model or model_id()
-    max_tokens = max_tokens or int(os.environ.get("COHERENCE_MLX_MAX_TOKENS", "1024"))
+    mid = model or CFG.mlx_model
+    max_tokens = max_tokens if max_tokens is not None else CFG.mlx_max_tokens
+    temp = CFG.mint_temp if temp is None else temp
     model_obj, tokenizer = _load(mid)
 
     from mlx_lm import generate as mlx_generate

@@ -317,26 +317,33 @@ def cmd_mint(args):
     """Mint durable atoms from source text/file via local MLX (pending review)."""
     from . import mint as mint_mod
     from . import mlx_backend
+    from .config import CFG
 
     active, path, store = load_active_store()
     if args.ensure_model:
         mid = mlx_backend.ensure_model(args.model)
         print(f"model ready: {mid}")
-    if args.file:
-        source = Path(args.file).expanduser().read_text(encoding="utf-8")
-        source_label = str(Path(args.file))
-    else:
-        source = args.text or ""
-        source_label = "stdin/arg"
+    source_loaders = {
+        "file": lambda: (
+            Path(args.file).expanduser().read_text(encoding="utf-8"),
+            str(Path(args.file)),
+        ),
+        "text": lambda: (args.text or "", "stdin/arg"),
+    }
+    source, source_label = source_loaders["file" if args.file else "text"]()
     if not source.strip():
         raise SystemExit("mint requires --text or --file")
+    cfg = CFG.replace(
+        mlx_model=args.model or CFG.mlx_model,
+        mint_max_atoms=args.max_atoms,
+        mint_min_grounding=args.min_grounding,
+    )
     result = mint_mod.mint_from_text(
         source,
         theme=args.theme or active.get("title"),
-        max_atoms=args.max_atoms,
         model=args.model,
         existing=store.get("atoms") or [],
-        min_grounding=float(getattr(args, "min_grounding", 0.55)),
+        cfg=cfg,
     )
     atoms = store.setdefault("atoms", [])
     cons = parse_consistency_map(store)
@@ -393,6 +400,76 @@ def cmd_review(args):
         open_browser=not args.no_browser,
         on_change=on_change,
     )
+
+
+def cmd_critique(args):
+    """LLM critique of pending atoms; optional auto-accept/reject by confidence."""
+    from . import critique as critique_mod
+    from . import mlx_backend
+    from .config import CFG
+
+    active, path, store = load_active_store()
+    store = normalize_store_atoms(store)
+    if args.ensure_model:
+        print(f"model ready: {mlx_backend.ensure_model(args.model)}")
+
+    source_loaders = {
+        "file": lambda: Path(args.source_file).expanduser().read_text(encoding="utf-8"),
+        "text": lambda: args.source_text,
+        "excerpts": lambda: critique_mod.collect_source_excerpts(store),
+    }
+    source_key = (
+        "file" if args.source_file else "text" if args.source_text else "excerpts"
+    )
+    source = source_loaders[source_key]()
+
+    cfg = CFG.replace(
+        critique_min_grounding=getattr(args, "min_grounding", None),
+        critique_accept_min_conf=getattr(args, "accept_min_conf", None),
+        critique_reject_min_conf=getattr(args, "reject_min_conf", None),
+        critique_edit_min_conf=getattr(args, "edit_min_conf", None),
+        mlx_model=args.model or CFG.mlx_model,
+    )
+    report = critique_mod.critique_pending(
+        store, source=source, model=args.model, cfg=cfg
+    )
+    out = Path(args.out) if args.out else Path(path).with_name("critique_report.json")
+    save_json(out, report)
+    print(f"wrote {out}  pending={report['n_pending']} model={report['model']}")
+    for p in report.get("proposals") or []:
+        print(
+            f"  [{p['i']}] {p['action']} conf={p['confidence']:.2f} "
+            f"g={p.get('grounding')}  {p.get('reason', '')[:70]}"
+        )
+        if p["action"] == "edit" and p.get("text") and p["text"] != p.get("original"):
+            print(f"       → {p['text'][:90]}")
+
+    mode = (
+        "all"
+        if args.apply_all
+        else "gated+edits"
+        if args.apply_edits
+        else "gated"
+        if args.apply
+        else "attach"
+    )
+    apply_kwargs = {
+        "attach": dict(attach_only=True),
+        "gated": dict(apply_edits=False, apply_all=False),
+        "gated+edits": dict(apply_edits=True, apply_all=False),
+        "all": dict(apply_edits=True, apply_all=True),
+    }[mode]
+    result = critique_mod.apply_proposals(
+        store, report.get("proposals") or [], cfg=cfg, **apply_kwargs
+    )
+    save_json(path, result["store"])
+    refresh_topic_counts(active["topic_id"])
+    a = result["applied"]
+    print(
+        f"mode={mode} accept={a['accepted']} edit={a['edited']} "
+        f"reject={a['rejected']} proposed_only={a['proposed_only']}"
+    )
+    print("Review UI: coherence review --serve")
 
 
 def cmd_eval(args):
@@ -1436,14 +1513,19 @@ def main(argv=None):
     p_mint.add_argument("--text", default="", help="Source text to atomize")
     p_mint.add_argument("--file", help="Source file path")
     p_mint.add_argument("--theme", help="Theme focus for minting")
-    p_mint.add_argument("--max-atoms", type=int, default=12)
+    p_mint.add_argument(
+        "--max-atoms",
+        type=int,
+        default=None,
+        help="Cap minted atoms (default from config/env)",
+    )
     p_mint.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
     p_mint.add_argument("--ensure-model", action="store_true", help="Download/load model first")
     p_mint.add_argument(
         "--min-grounding",
         type=float,
-        default=0.55,
-        help="Drop minted claims below this source-overlap ratio (anti-invention)",
+        default=None,
+        help="Drop minted claims below this source-overlap ratio (default from config/env)",
     )
     p_mint.add_argument("--auto-score", action="store_true")
     p_mint.add_argument(
@@ -1467,6 +1549,36 @@ def main(argv=None):
         help="Normalize atoms.json to structured records without serving",
     )
     p_rev.set_defaults(func=cmd_review)
+
+    p_crit = sub.add_parser(
+        "critique",
+        help="Critique pending atoms (MLX); optional gated auto-accept/reject",
+    )
+    p_crit.add_argument("--source-file", help="Grounding source file")
+    p_crit.add_argument("--source-text", help="Grounding source text")
+    p_crit.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
+    p_crit.add_argument("--ensure-model", action="store_true")
+    p_crit.add_argument("--min-grounding", type=float, default=None)
+    p_crit.add_argument("--accept-min-conf", type=float, default=None)
+    p_crit.add_argument("--reject-min-conf", type=float, default=None)
+    p_crit.add_argument("--edit-min-conf", type=float, default=None)
+    p_crit.add_argument(
+        "--apply",
+        action="store_true",
+        help="Auto-apply accept/reject when confidence+grounding clear gates",
+    )
+    p_crit.add_argument(
+        "--apply-edits",
+        action="store_true",
+        help="Also auto-apply high-confidence grounded edits",
+    )
+    p_crit.add_argument(
+        "--apply-all",
+        action="store_true",
+        help="Apply every proposal (skips confidence gates)",
+    )
+    p_crit.add_argument("--out", help="Write critique_report.json path")
+    p_crit.set_defaults(func=cmd_critique)
 
     p_eval = sub.add_parser(
         "eval",
