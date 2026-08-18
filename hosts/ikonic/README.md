@@ -70,7 +70,8 @@ Python dependency: `constructor-resilience` (this package) for search + intersec
 
 Scorecard + phased plan: **[VOICE_FAST_PATH_EVAL.md](./VOICE_FAST_PATH_EVAL.md)**.
 
-**Short version:** packets are **Knowledge FREE** (mid-ladder), not verb FREE. Mint/critique stay offline; turn path is packet lookup → speak or fall through → residual grounded with packet leftovers.
+**Short version:** packets are **Knowledge FREE** (mid-ladder), not verb FREE.  
+**Deployment:** ship `coherence/topics/*` **inside each subsystem package** (same doctrine as `utterance_seed.yaml`) so everyone who installed that subsystem shares the fast-path floor; personal topics overlay. Mint/critique stay offline; turn path is union(package topics) → speak or fall through → residual with leftovers.
 
 ## Classical web compatibility
 

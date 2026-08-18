@@ -3,8 +3,81 @@
 **Date:** 2026-08-17  
 **Question:** Can `constructor-resilience` (atoms → critique → packet → eval) sit on the **fast path** of Ikonic’s native voice/text inference engine, not only as offline research tooling?
 
-**Verdict (now):** **Yes as a mid-ladder knowledge FREE tier** — between deterministic dispatch and residual LLM — **not** as a replacement for pattern/CLI FREE.  
-**Verdict (ready to wire):** Packet **lookup + speak** is the first spike; mint/critique stay offline or post-turn.
+**Verdict (narrow personal store only):** **Not good enough** for a product fast path. A few vault topics help research/handoff; they do not give every install the same FREE knowledge floor.
+
+**Verdict (expanded — subsystem-shipped packets):** **Good enough as the Knowledge FREE layer** — same shape as today’s `utterance_seed.yaml` / `voice_session.yaml`: each installed subsystem brings a shared atom/packet surface; everyone with that subsystem shares that fast path. Personal topics remain overlays, not the sole store.
+
+**Not a replacement for verb FREE** (patterns, working sets, NL→CLI). Packets answer durable claims; seeds already answer durable *commands*.
+
+---
+
+## 0. Expanded scope: subsystem-preloaded packets
+
+### Precedent (already shipping)
+
+| Shared seed | Subsystem | What every install gets |
+|-------------|-----------|-------------------------|
+| `utterance_seed.yaml` | terminal | NL→CLI rows (conf 0.5) |
+| `curated_phrases.yaml` | terminal | exact/prefix → CLI |
+| `voice_session.yaml` | voice | wake/goodbye/dismiss patterns |
+| prompt defaults | prompts/ | identity, compose, TTS seeds |
+
+Load order is always: **package builtin → vault overlay → user teach**.  
+Constructor packets should follow **exactly that law**.
+
+### Proposed layout
+
+```text
+subsystems/<id>/
+  coherence/                    # ships with the package
+    topics/
+      <id>-law/                 # product law for this subsystem
+        atoms.json
+        packet.json
+      <id>-howto/               # optional operator knowledge
+        atoms.json
+
+{vault}/coherence/              # runtime merge root (COHERENCE_ROOT)
+  topics/
+    voice-law/                  # materialized from package on install/update
+    feed-law/
+    …                           # user / followed surfaces (overlays)
+```
+
+**Materialize on subsystem enable/update** (mirror utterance seed): copy or merge package topics into `{vault}/coherence/topics/` with `origin: package`, `subsystem: voice`. Vault overlays and user mint never overwrite package atoms in place — teach adds *new* atoms or user-topic forks (same as pinned teach beating seed conf 0.5).
+
+### Who shares what
+
+| Surface | Shared among | Mutability |
+|---------|--------------|------------|
+| Package `coherence/topics/*` | Everyone who installed that subsystem (all devices/vaults that pulled the package version) | Versioned with the package; changelog via release |
+| Vault overlay topics | That vault’s users | Local |
+| User mint / Daily Review atoms | That user (or intentional promote) | Pending → critique → accept |
+| Followed public (Lex, etc.) | Opt-in subscribers | Import/subscribe |
+
+Fast-path **read set** for a turn:
+
+```text
+union(
+  packets of enabled subsystems' package topics,   # shared floor
+  active / tagged user topics,                     # personal
+  optional followed publics                        # later
+)
+```
+
+Query-aware seed runs over that union (same `packet_for_query` we already eval).
+
+### Why this answers “is it good enough?”
+
+| Requirement | Personal-only | + Subsystem packages |
+|-------------|----------------|----------------------|
+| Cold install has useful Knowledge FREE | No | Yes — voice/feed/… law ships |
+| Same answers across users for product behavior | Accidental | By construction |
+| Fits existing seed doctrine | Weak | Strong (`utterance_seed` twin) |
+| Scales as subsystems grow | One mega-topic | Per-package topics; install = load |
+| Circles / privacy | Muddy | Package = public-to-install; user = inner |
+
+**Good enough** means: the fast path is a **shared constructor floor per enabled subsystem**, plus personal overlays — not a single optional research folder.
 
 ---
 
@@ -114,33 +187,35 @@ Do **not** call full mint/critique on the turn.
 
 ## 6. Integration plan (phased)
 
-### P0 — Prove the lane (1–2 days)
+### P0 — Shared floor + prove the lane
 
-1. **Contract:** `GET`-shaped helper or in-process read:
-   - input: `query`, optional `topic_id`
-   - output: `{ sufficient, atoms[], method, topic_id }`
-2. **Native session:** after curated arbiter miss / before soft feed, call helper on `vault/coherence`.
-3. **Emit:** `pattern_id=knowledge_packet`, speak joined atoms (TTS phrases already short), `turn_audit` path=`command` submodule=`knowledge_packet`.
-4. **Offline eval harness:** replay N voice transcripts through helper; report sufficient rate + latency; no WS required.
+1. **Package shape:** `subsystems/<id>/coherence/topics/<id>-law/{atoms,packet}.json` (+ SPEC `origin`/`subsystem` fields).
+2. **Materialize:** on enable/update, merge package topics → `{vault}/coherence/topics/` (utterance_seed load-order twin).
+3. **Seed voice + terminal first:** product-law atoms (presence ≠ open terminal; FREE vs residual; discover tiers) — content already drafted in vault `voice-computer-first-run`.
+4. **Turn helper:** input `query` → query-aware packet over **union of enabled subsystem topics** (+ optional active user topic) → `{ sufficient, atoms[], sources[] }`.
+5. **Native session:** after curated miss / before soft feed → helper → `pattern_id=knowledge_packet` speak or fallthrough.
+6. **Eval:** `coherence eval` against package topics as regression (on-topic ✓ / off-topic ∅).
 
-**Exit:** “hello computer / first-run / interest” questions from existing packets answer FREE; Mars-like queries fall through.
+**Exit:** Fresh vault with voice subsystem installed answers product-law questions FREE with **no** prior user mint; Mars falls through.
 
-### P1 — Ground residual (same week)
+### P1 — Residual + teach
 
-5. When packet insufficient but non-empty overlap, pass atoms into `native_llm` prompt as `<coherence_packet>`.
-6. Daily Review teach `deep` stays force-residual; teach `fast`+CLI stays utterance_cache; add teach **`packet`** → mint atom (pending → critique).
+7. Inject overlapping atoms into `native_llm` when insufficient for full FREE speak.
+8. Daily Review: teach `packet` → mint into user topic (pending → critique); never silent-edit package atoms.
+9. Feed/explore package topics for domain law (what discover tiers mean, entity correction, etc.).
 
-### P2 — Product surfaces
+### P2 — Surfaces + optional network
 
-7. Voice: “where do my interests meet Lex on X” → `intersect` → speak + glass list.
-8. Unify vault layout: `coherence/` only; deprecate parallel `constructor/` or symlink.
-9. Optional: Rust port of greedy + query seed for zero-Python desktop.
+10. Intersect UI/voice for user ∩ followed publics.
+11. Rust port of query-seed greedy for desktop-native.
+12. Optional: publish package packets as versioned HTTPS feeds for non-Ikonic hosts.
 
-### Non-goals (P0)
+### Non-goals (P0–P1)
 
 - Mint/critique on STT hot path  
 - Replacing pattern FREE or media tools  
-- Auto-promoting lifelog into packets  
+- Auto-promoting lifelog into package topics  
+- One global mixed atom warehouse for all subsystems
 
 ---
 
@@ -158,23 +233,26 @@ Do **not** call full mint/critique on the turn.
 
 ## 8. Recommendation
 
-**Adopt packets as Knowledge FREE** on the inference ladder:
+**Expand scope before calling the fast path “done.”**
 
-1. Keep verb FREE as-is (patterns, cache, working sets).  
-2. Add packet lane for **durable belief / interest / product-law** questions.  
-3. Use mint → critique → review **offline** to grow the store; use eval continuously as the regression suite for the lane.  
-4. Feed residual with packet leftovers so the slow path still benefits.
+1. **Verb FREE** stays patterns / working sets / utterance seeds (already shared per subsystem).  
+2. **Knowledge FREE** = packets **shipped inside each subsystem package**, materialized into the vault like `utterance_seed` — shared by everyone who installed that subsystem.  
+3. **Personal / followed** topics overlay; they do not replace the package floor.  
+4. Mint → critique → review grow *user* surfaces offline; package atoms advance by **release**, not by kitchen STT.  
+5. Eval against **package** topics is the CI gate for “is the fast path still good enough?”
 
-That is the constructor-theoretic read of the engine: **explanatory constructors (packets) on the free path; generative residual only for the frontier.**
+Constructor read: each subsystem ships an **explanatory constructor** for its domain; the turn selects a resilient packet from the enabled set; generation is residual for the frontier only.
+
+**Is it good enough today?** The *method* (mint/critique/eval/packet) is good enough. The *deployment shape* (personal vault topics only) is not. Subsystem-preloaded packets close that gap.
 
 ---
 
 ## 9. Next concrete spike (when you say go)
 
-Single PR on `feat/constructor-fastpath` (or stacked branch):
+Stacked work:
 
-- `ikonic_voice`: `knowledge_packet` match (question-shaped + topic keywords) → load `COHERENCE_ROOT` / `{vault}/coherence` → speak  
-- Tests: packet hit / miss / audit path  
-- Script: `scripts/eval_voice_packet_lane.py` wrapping `coherence eval` against vault topics  
+1. **Package seed:** `subsystems/voice/coherence/topics/voice-law/` from existing first-run atoms; materialize into vault on startup (seed loader twin of utterance_seed).  
+2. **Lane:** after curated miss → union query-aware packet over enabled subsystem topics → speak / miss.  
+3. **Eval CI:** `coherence eval` fixtures on `voice-law` (+ Mars control).  
 
-No MLX on the turn; optional later for sufficiency only.
+No MLX on the turn.
