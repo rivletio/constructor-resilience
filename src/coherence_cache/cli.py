@@ -336,6 +336,7 @@ def cmd_mint(args):
         max_atoms=args.max_atoms,
         model=args.model,
         existing=store.get("atoms") or [],
+        min_grounding=float(getattr(args, "min_grounding", 0.55)),
     )
     atoms = store.setdefault("atoms", [])
     cons = parse_consistency_map(store)
@@ -352,15 +353,21 @@ def cmd_mint(args):
                 s = heuristic_pair_score(atoms[i], rec)
                 if abs(s) >= 0.05:
                     cons[(i, idx)] = s
-        print(f"  [{idx}] {atom_text(rec)}")
+        g = (rec.get("extra") or {}).get("grounding")
+        gtag = f" g={g}" if g is not None else ""
+        print(f"  [{idx}]{gtag} {atom_text(rec)}")
+    for d in result.get("dropped") or []:
+        print(f"  dropped ({d.get('reason')} g={d.get('grounding')}): {d.get('text','')[:90]}")
     if args.auto_score:
         store["consistency"] = dump_consistency_map(cons)
     store["updated"] = now_iso()
     save_json(path, store)
     refresh_topic_counts(active["topic_id"])
+    n_drop = len(result.get("dropped") or [])
     print(
         f"Minted {added} pending atom(s) via {result['model']} "
-        f"from {source_label} → review with: coherence review --serve"
+        f"(dropped {n_drop} ungrounded) from {source_label} "
+        f"→ review with: coherence review --serve"
     )
 
 
@@ -402,30 +409,34 @@ def cmd_eval(args):
         raise SystemExit("Pass --query and/or --queries file")
     if args.ensure_model:
         print(f"model ready: {mlx_backend.ensure_model(args.model)}")
-    # Prefer existing packet.json atoms if present and not --rebuild-packet
+    # Default = query-aware (per-query seeded packet). --fixed-packet locks one global packet.
     packet = None
-    packet_path = Path(path).with_name("packet.json")
-    if packet_path.exists() and not args.rebuild_packet:
-        doc = load_json(packet_path, {}) or {}
-        packet = list(doc.get("atoms") or [])
-        if packet and isinstance(packet[0], dict):
-            packet = atom_texts(packet)
+    if args.fixed_packet:
+        packet_path = Path(path).with_name("packet.json")
+        if packet_path.exists() and not args.rebuild_packet:
+            doc = load_json(packet_path, {}) or {}
+            packet = list(doc.get("atoms") or [])
+            if packet and isinstance(packet[0], dict):
+                packet = atom_texts(packet)
+        if not packet:
+            packet, _meta = eq.resolve_packet(store, max_size=args.max_size)
     report = eq.eval_queries(
         queries,
         store,
         packet=packet,
         max_size=args.max_size,
         model=args.model,
+        query_aware=packet is None,
     )
     out = Path(args.out) if args.out else Path(path).with_name("eval_report.json")
     save_json(out, report)
-    print(f"wrote {out}")
+    mode = "fixed-packet" if packet is not None else "query-aware"
+    print(f"wrote {out}  mode={mode}")
     print(
         f"queries={report['n_queries']}  "
         f"mean_grounded={report['mean_grounded']}  "
         f"mean_coverage={report['mean_coverage']}  "
-        f"insufficient={report['n_insufficient']}  "
-        f"packet={len(report.get('packet') or [])}"
+        f"insufficient={report['n_insufficient']}"
     )
     for i, row in enumerate(report.get("results") or []):
         g = row.get("grounded")
@@ -1428,6 +1439,12 @@ def main(argv=None):
     p_mint.add_argument("--max-atoms", type=int, default=12)
     p_mint.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
     p_mint.add_argument("--ensure-model", action="store_true", help="Download/load model first")
+    p_mint.add_argument(
+        "--min-grounding",
+        type=float,
+        default=0.55,
+        help="Drop minted claims below this source-overlap ratio (anti-invention)",
+    )
     p_mint.add_argument("--auto-score", action="store_true")
     p_mint.add_argument(
         "--auto-accept",
@@ -1458,7 +1475,16 @@ def main(argv=None):
     p_eval.add_argument("--query", action="append", default=[], help="Query (repeatable)")
     p_eval.add_argument("--queries", help="File with one query per line")
     p_eval.add_argument("--max-size", type=int, default=8, help="Packet size if rebuilding")
-    p_eval.add_argument("--rebuild-packet", action="store_true")
+    p_eval.add_argument(
+        "--rebuild-packet",
+        action="store_true",
+        help="Ignore saved packet.json; use query-aware packets from the store",
+    )
+    p_eval.add_argument(
+        "--fixed-packet",
+        action="store_true",
+        help="Force one global packet (saved or greedy) for all queries",
+    )
     p_eval.add_argument("--model", help="Override COHERENCE_MLX_MODEL")
     p_eval.add_argument("--ensure-model", action="store_true")
     p_eval.add_argument("--out", help="Write report JSON (default: eval_report.json beside atoms)")

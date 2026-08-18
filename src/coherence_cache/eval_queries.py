@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from . import mlx_backend
-from .atoms import atom_text, atom_texts, is_active
+from .atoms import atom_text, atom_texts, is_active, query_overlap
 from .consistency import parse_consistency
 from .search import greedy_resilient
 
@@ -94,13 +94,10 @@ def judge_answer(
     return grade
 
 
-def resolve_packet(store: dict, *, max_size: int = 8) -> tuple[list[str], dict]:
-    """Greedy packet from non-rejected atoms."""
+def _active_view(store: dict) -> tuple[list[str], dict]:
     full = store.get("atoms") or []
     active_idx = [i for i, a in enumerate(full) if is_active(a)]
     texts = [atom_text(full[i]) for i in active_idx]
-    if not texts:
-        return [], {"method": "empty", "energy": 0.0}
     cons_full = parse_consistency(store)
     cons: dict = {}
     index_map = {old: new for new, old in enumerate(active_idx)}
@@ -110,6 +107,14 @@ def resolve_packet(store: dict, *, max_size: int = 8) -> tuple[list[str], dict]:
             if a > b:
                 a, b = b, a
             cons[(a, b)] = s
+    return texts, cons
+
+
+def resolve_packet(store: dict, *, max_size: int = 8) -> tuple[list[str], dict]:
+    """Greedy packet from non-rejected atoms."""
+    texts, cons = _active_view(store)
+    if not texts:
+        return [], {"method": "empty", "energy": 0.0}
     selected, energy = greedy_resilient(
         texts, cons, max_size=max_size, redundancy_scale=2.0
     )
@@ -120,6 +125,56 @@ def resolve_packet(store: dict, *, max_size: int = 8) -> tuple[list[str], dict]:
     }
 
 
+def packet_for_query(
+    store: dict,
+    query: str,
+    *,
+    max_size: int = 8,
+    seed_k: int = 3,
+) -> tuple[list[str], dict]:
+    """Query-aware packet: seed with top overlap atoms, then greedy-fill.
+
+    Expectation: on-topic questions should see supporting atoms even when a
+    global greedy packet dropped them for redundancy/coverage tradeoffs.
+    """
+    texts, cons = _active_view(store)
+    if not texts:
+        return [], {"method": "empty", "energy": 0.0, "query": query}
+    ranked = sorted(
+        range(len(texts)),
+        key=lambda i: query_overlap(query, texts[i]),
+        reverse=True,
+    )
+    seeds = []
+    for i in ranked:
+        if query_overlap(query, texts[i]) <= 0:
+            break
+        seeds.append(texts[i])
+        if len(seeds) >= max(1, min(seed_k, max_size)):
+            break
+    # Greedy on full set, then union seeds (preserve order: seeds first)
+    selected, energy = greedy_resilient(
+        texts, cons, max_size=max_size, redundancy_scale=2.0
+    )
+    out: list[str] = []
+    seen = set()
+    for t in seeds + list(selected):
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+        if len(out) >= max_size:
+            break
+    return out, {
+        "method": "query_seeded_greedy",
+        "energy": float(energy),
+        "max_size": max_size,
+        "query": query,
+        "seed_count": len(seeds),
+        "seed_overlap": [round(query_overlap(query, t), 3) for t in seeds],
+    }
+
+
 def eval_queries(
     queries: list[str],
     store: dict,
@@ -127,23 +182,37 @@ def eval_queries(
     packet: list[str] | None = None,
     max_size: int = 8,
     model: str | None = None,
+    query_aware: bool = True,
 ) -> dict[str, Any]:
-    if packet is None:
-        packet, meta = resolve_packet(store, max_size=max_size)
-    else:
-        meta = {"method": "provided", "energy": None, "max_size": len(packet)}
+    """Eval packet usefulness.
+
+    Default ``query_aware=True`` builds a per-query seeded packet so we test
+    whether the *store* can support the question — not only whether one global
+    greedy packet happened to retain the right atom.
+    Pass ``packet=`` (or ``query_aware=False``) to lock a fixed packet.
+    """
+    global_packet = packet
+    global_meta = None
+    if global_packet is not None:
+        global_meta = {"method": "provided", "energy": None, "max_size": len(global_packet)}
+    elif not query_aware:
+        global_packet, global_meta = resolve_packet(store, max_size=max_size)
 
     rows = []
     for q in queries:
         q = q.strip()
         if not q:
             continue
-        ans = answer_from_packet(q, packet, model=model)
+        if global_packet is not None:
+            pkt, meta = global_packet, global_meta or {}
+        else:
+            pkt, meta = packet_for_query(store, q, max_size=max_size)
+        ans = answer_from_packet(q, pkt, model=model)
         answer_text = (ans.get("text") or "").strip()
         if "</think>" in answer_text:
             answer_text = answer_text.split("</think>")[-1].strip()
-        grade = judge_answer(q, packet, answer_text, model=model)
-        lex = lexical_coverage(q, answer_text, packet)
+        grade = judge_answer(q, pkt, answer_text, model=model)
+        lex = lexical_coverage(q, answer_text, pkt)
         insuff = "INSUFFICIENT_PACKET" in answer_text.upper()
         rows.append(
             {
@@ -155,6 +224,8 @@ def eval_queries(
                 "lexical_coverage": lex,
                 "judge_notes": grade.get("notes"),
                 "model": ans.get("model"),
+                "packet": pkt,
+                "packet_meta": meta,
             }
         )
 
@@ -167,8 +238,9 @@ def eval_queries(
         "kind": "packet_query_eval",
         "created": _now(),
         "model": model or mlx_backend.model_id(),
-        "packet": packet,
-        "packet_meta": meta,
+        "query_aware": query_aware and global_packet is None,
+        "packet": global_packet,
+        "packet_meta": global_meta,
         "n_queries": len(rows),
         "mean_grounded": avg("grounded"),
         "mean_coverage": avg("coverage"),

@@ -169,9 +169,11 @@ DO NOT emit:
 - ephemeral UI/state ("the button is blue right now")
 - near-duplicates of claims already listed
 - speculative wishes without grounding
+- claims NOT entailed by the source (no invention, no "helpful" elaboration)
 
 Each atom: one sentence, concrete, stand-alone, no markdown bullets.
 Prefer claims that could support or conflict with other claims.
+Extract; do not invent.
 """
 
 
@@ -180,6 +182,7 @@ MINT_SYSTEM = f"""You extract knowledge atoms for a constructor-resilience coher
 {ATOM_QUALITY_LAW}
 
 Return ONLY a JSON array of strings (the atom texts). No preamble.
+Every string MUST be a paraphrase or near-quote of something in the source.
 """
 
 
@@ -188,9 +191,70 @@ def mint_prompt(source_text: str, *, theme: str | None = None, max_atoms: int = 
     return (
         f"{MINT_SYSTEM}\n"
         f"{theme_line}"
-        f"Extract up to {max_atoms} atoms from the source below.\n\n"
+        f"Extract up to {max_atoms} atoms from the source below.\n"
+        f"If the source has fewer durable claims, return fewer atoms.\n\n"
         f"--- SOURCE ---\n{source_text.strip()[:12000]}\n--- END ---\n"
     )
+
+
+_STOP = frozenset(
+    """
+    a an the and or but if then than to of in on for with from by as is are was
+    were be been being it its this that these those we you they he she their our
+    not no nor so at into about over under after before when while who which what
+    how why can could should would may might must will shall do does did done
+    have has had having also just only very more most other such own same
+    """.split()
+)
+
+
+def content_tokens(text: str) -> set[str]:
+    toks = set(re.findall(r"[a-z0-9']+", (text or "").lower()))
+    return {t for t in toks if len(t) >= 4 and t not in _STOP}
+
+
+def grounding_score(claim: str, source: str) -> float:
+    """Fraction of claim content tokens attested in the source (0–1)."""
+    c = content_tokens(claim)
+    if not c:
+        return 0.0
+    s = content_tokens(source)
+    # Also allow substring hits for short technical tokens already in source lower
+    src_l = (source or "").lower()
+    hit = 0
+    for t in c:
+        if t in s or t in src_l:
+            hit += 1
+    return hit / len(c)
+
+
+def is_grounded(claim: str, source: str, *, min_ratio: float = 0.55) -> bool:
+    """True if claim is sufficiently attested by source (anti-invention gate)."""
+    claim = (claim or "").strip()
+    if len(claim) < 12:
+        return False
+    # Near-quote: long contiguous span from source
+    src_l = re.sub(r"\s+", " ", (source or "").lower())
+    cl = re.sub(r"\s+", " ", claim.lower())
+    if len(cl) >= 24 and cl in src_l:
+        return True
+    # Sliding window of 6+ consecutive content words
+    words = [w for w in re.findall(r"[a-z0-9']+", cl) if w not in _STOP and len(w) >= 3]
+    if len(words) >= 6:
+        for i in range(0, len(words) - 5):
+            span = " ".join(words[i : i + 6])
+            if span in src_l:
+                return True
+    return grounding_score(claim, source) >= min_ratio
+
+
+def query_overlap(query: str, claim: str) -> float:
+    """How much a claim covers a query (for query-aware packets)."""
+    q = content_tokens(query)
+    if not q:
+        return 0.0
+    c = content_tokens(claim)
+    return len(q & c) / len(q)
 
 
 def parse_minted_list(raw: str) -> list[str]:

@@ -55,12 +55,13 @@ coherence mint --file ./notes.md --theme "world models" --ensure-model --auto-sc
 # Slick HTML reviewer — accept / edit / reject
 coherence review --serve   # http://127.0.0.1:8765
 
-# How well does the packet answer arbitrary questions?
+# How well can the store answer arbitrary questions? (query-aware packets)
 coherence eval \
   --query "What is JEPA?" \
   --query "How do we share interest without vault dumps?" \
   --ensure-model
 # → topics/<id>/eval_report.json
+# Expect: on-topic ✓, off-topic INSUFFICIENT. Use --fixed-packet to stress one global packet.
 ```
 
 ### Interest intersection

@@ -14,6 +14,8 @@ from .atoms import (
     ATOM_QUALITY_LAW,
     MINT_SYSTEM,
     atom_text,
+    grounding_score,
+    is_grounded,
     make_atom,
     mint_prompt,
     parse_minted_list,
@@ -27,8 +29,13 @@ def mint_from_text(
     max_atoms: int = 12,
     model: str | None = None,
     existing: list | None = None,
+    min_grounding: float = 0.55,
 ) -> dict[str, Any]:
-    """Run local MLX mint; return {atoms: [records], raw, model, prompt}."""
+    """Run local MLX mint; return {atoms, dropped, raw, model, prompt}.
+
+    Post-filter drops invented claims that fail the grounding gate so
+    review starts from source-faithful candidates.
+    """
     prompt = mint_prompt(source_text, theme=theme, max_atoms=max_atoms)
     if existing:
         prior = "\n".join(f"- {atom_text(a)}" for a in existing[:40])
@@ -39,35 +46,41 @@ def mint_from_text(
         system=MINT_SYSTEM,
         model=model,
         max_tokens=1200,
-        temp=0.15,
+        temp=0.1,
     )
     texts = parse_minted_list(out["text"])
-    # Dedup vs existing + self
     seen = {atom_text(a).lower() for a in (existing or [])}
     records = []
+    dropped = []
     for t in texts:
         key = t.lower()
         if key in seen or len(t) < 12:
             continue
+        g = grounding_score(t, source_text)
+        if not is_grounded(t, source_text, min_ratio=min_grounding):
+            dropped.append({"text": t, "reason": "ungrounded", "grounding": round(g, 3)})
+            continue
         seen.add(key)
-        records.append(
-            make_atom(
-                t,
-                method="mlx_mint",
-                model=out["model"],
-                source="source_text",
-                source_excerpt=source_text[:400],
-                prompt=prompt,
-            )
+        rec = make_atom(
+            t,
+            method="mlx_mint",
+            model=out["model"],
+            source="source_text",
+            source_excerpt=source_text[:400],
+            prompt=prompt,
+            extra={"grounding": round(g, 3)},
         )
+        records.append(rec)
         if len(records) >= max_atoms:
             break
     return {
         "atoms": records,
+        "dropped": dropped,
         "raw": out["text"],
         "model": out["model"],
         "prompt": prompt,
         "quality_law": ATOM_QUALITY_LAW.strip(),
+        "min_grounding": min_grounding,
     }
 
 

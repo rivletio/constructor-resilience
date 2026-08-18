@@ -45,14 +45,29 @@ coherence ensure-model
 Only durable claims. No filler, no ambient UI state, no near-duplicates.
 Prefer claims that can support or conflict with other claims.
 
+## Grounding gate (anti-invention)
+
+After MLX mint, claims that fail `is_grounded(claim, source)` are **dropped**
+before they enter `atoms.json` (logged as `dropped (…) ungrounded`).
+
+Tune with `--min-grounding` (default `0.55`). Near-quotes always pass.
+
 ## Eval interpretation
+
+Default mode is **query-aware**: each query gets a seeded packet (top overlap
+atoms ∪ greedy fill). That tests whether the *store* can support the question.
 
 | Signal | Meaning |
 |--------|---------|
-| `INSUFFICIENT_PACKET` | Honest miss — packet lacks the answer |
+| `INSUFFICIENT_PACKET` | Honest miss — store/packet lacks the answer |
 | high `grounded` | Answer stayed inside the packet |
 | high `coverage` | Query was addressed |
-| Mars-style control query | Should be insufficient if packet is on-topic |
+| Mars-style control query | Should be insufficient if store is on-topic |
 
-If on-topic queries are insufficient, either mint missed the claim, review
-rejected it, or greedy packet dropped it — all are reviewable.
+Use `--fixed-packet` to lock one global greedy/saved packet (stresses
+packet selection, not store coverage).
+
+**Expected on a well-minted topical store:** on-topic queries ✓, off-topic ∅.
+
+If on-topic queries are insufficient: mint missed the claim, review rejected
+it, or (fixed mode) greedy packet dropped it — all are reviewable.
