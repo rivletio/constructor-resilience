@@ -472,6 +472,37 @@ def cmd_critique(args):
     print("Review UI: coherence review --serve")
 
 
+def cmd_propose_seeds(args):
+    """Propose Verb FREE utterance_seed rows from accepted atoms (human/CI gate)."""
+    from . import seed_propose as sp
+    from .config import CFG
+
+    active, path, store = load_active_store()
+    cfg = CFG.replace(seed_propose_min_conf=getattr(args, "min_conf", None))
+    proposals = sp.propose_seeds_from_store(
+        store,
+        cfg=cfg,
+        accepted_only=not getattr(args, "include_pending", False),
+    )
+    doc = sp.proposals_document(
+        proposals, topic_id=active.get("topic_id"), cfg=cfg
+    )
+    out = (
+        Path(args.out)
+        if args.out
+        else Path(path).with_name("utterance_seed_proposals.json")
+    )
+    save_json(out, doc)
+    print(
+        f"wrote {out}  proposals={doc['count']}  "
+        f"status=pending_human_or_ci  (does not touch utterance_seed.yaml)"
+    )
+    for p in proposals[:20]:
+        print(f"  {p.confidence:.2f}  {p.phrasing!r} → {p.tool}  ({p.reason})")
+    if len(proposals) > 20:
+        print(f"  … +{len(proposals) - 20} more")
+
+
 def cmd_eval(args):
     """Score packet usefulness on arbitrary queries (local MLX)."""
     from . import eval_queries as eq
@@ -1698,6 +1729,26 @@ def main(argv=None):
     p_export.add_argument("--min-score", type=float, default=0.55, help="Min |consistency| for links")
     p_export.add_argument("--packet-size", type=int, default=6, help="Resilient packet size for writeup")
     p_export.set_defaults(func=cmd_export)
+
+    p_seeds = sub.add_parser(
+        "propose-seeds",
+        help=(
+            "Propose utterance_seed NL→CLI rows from accepted atoms "
+            "(gated proposals file only — never auto-merges package YAML)"
+        ),
+    )
+    p_seeds.add_argument(
+        "--out",
+        default=None,
+        help="Write proposals JSON (default: <topic>/utterance_seed_proposals.json)",
+    )
+    p_seeds.add_argument("--min-conf", type=float, default=None)
+    p_seeds.add_argument(
+        "--include-pending",
+        action="store_true",
+        help="Also scan pending atoms (default: accepted/edited only)",
+    )
+    p_seeds.set_defaults(func=cmd_propose_seeds)
 
     args = parser.parse_args(argv)
     set_root(args.root)

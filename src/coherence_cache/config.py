@@ -53,9 +53,19 @@ class CoherenceConfig:
     review_port: int = 8765
     source_excerpt_chars: int = 800
     reason_max_chars: int = 400
+    # Utterance-seed proposals (gated; never auto-merge into package YAML)
+    seed_propose_enabled: bool = True
+    seed_propose_min_conf: float = 0.55
+    seed_propose_max_phrase_len: int = 80
 
     @classmethod
     def from_env(cls) -> CoherenceConfig:
+        enabled_raw = os.environ.get("COHERENCE_SEED_PROPOSE_ENABLED")
+        seed_enabled = (
+            cls.seed_propose_enabled
+            if enabled_raw is None or enabled_raw == ""
+            else enabled_raw.strip().lower() in ("1", "true", "yes", "on")
+        )
         return cls(
             mlx_model=_env_str("COHERENCE_MLX_MODEL", cls.mlx_model),
             mlx_max_tokens=_env_int("COHERENCE_MLX_MAX_TOKENS", cls.mlx_max_tokens),
@@ -87,6 +97,14 @@ class CoherenceConfig:
             eval_seed_k=_env_int("COHERENCE_EVAL_SEED_K", cls.eval_seed_k),
             review_host=_env_str("COHERENCE_REVIEW_HOST", cls.review_host),
             review_port=_env_int("COHERENCE_REVIEW_PORT", cls.review_port),
+            seed_propose_enabled=seed_enabled,
+            seed_propose_min_conf=_env_float(
+                "COHERENCE_SEED_PROPOSE_MIN_CONF", cls.seed_propose_min_conf
+            ),
+            seed_propose_max_phrase_len=_env_int(
+                "COHERENCE_SEED_PROPOSE_MAX_PHRASE_LEN",
+                cls.seed_propose_max_phrase_len,
+            ),
         )
 
     def replace(self, **kwargs: Any) -> CoherenceConfig:
