@@ -9,6 +9,21 @@
 
 **Not a replacement for verb FREE** (patterns, working sets, NL→CLI). Packets answer durable claims; seeds already answer durable *commands*.
 
+### Non‑negotiable: terminal DSL + mappings
+
+The **terminal system stays required** — bash-like DSL, `registry.yaml` commands, pipes, variables, cost tiers, and the NL→CLI maps that hit them:
+
+| Layer | Role | Must keep |
+|-------|------|-----------|
+| Command registry / handlers | `/discover`, `/open`, pipes, macros… | Yes — product surface + FREE execute target |
+| `utterance_seed` / curated phrases / utterance cache | Spoken/typed language → those commands | Yes — primary verb FREE |
+| Session control YAML | wake, goodbye, meeting, dictate | Yes |
+| Constructor packets | Durable *claims* (law, howto, interest) | Additive Knowledge FREE |
+| Teach / critique / review | May **propose** new NL→CLI seeds or packet atoms | Informs maps; does not delete the DSL |
+
+**Law:** voice/text fast path *executes* through terminal (and peer FREE actions). Packets may *explain*, *gate residual*, or *suggest* a `/cmd` — they do not absorb the command layer.  
+Same doctrine as today: curated arbiter can emit `run_terminal_command`; utterance teach pins CLI strings. Constructor resilience can later score “which phrasings belong in the seed” — the **commands and mappings still have to exist**.
+
 ---
 
 ## 0. Expanded scope: subsystem-preloaded packets
@@ -235,24 +250,24 @@ Do **not** call full mint/critique on the turn.
 
 **Expand scope before calling the fast path “done.”**
 
-1. **Verb FREE** stays patterns / working sets / utterance seeds (already shared per subsystem).  
-2. **Knowledge FREE** = packets **shipped inside each subsystem package**, materialized into the vault like `utterance_seed` — shared by everyone who installed that subsystem.  
-3. **Personal / followed** topics overlay; they do not replace the package floor.  
-4. Mint → critique → review grow *user* surfaces offline; package atoms advance by **release**, not by kitchen STT.  
-5. Eval against **package** topics is the CI gate for “is the fast path still good enough?”
+1. **Terminal DSL + NL→CLI maps are mandatory** — keep growing registry, seeds, curated maps; never replace with packets.  
+2. **Verb FREE** = patterns / working sets / utterance seeds / curated → `/commands` (and peer FREE actions).  
+3. **Knowledge FREE** = packets **shipped inside each subsystem package**, materialized like `utterance_seed`.  
+4. Constructor critique/eval may **inform** which phrasings deserve seed rows — they do not become the command layer.  
+5. Personal topics overlay; package atoms advance by release.  
+6. Residual only for the frontier; optionally grounded on packet leftovers.
 
-Constructor read: each subsystem ships an **explanatory constructor** for its domain; the turn selects a resilient packet from the enabled set; generation is residual for the frontier only.
-
-**Is it good enough today?** The *method* (mint/critique/eval/packet) is good enough. The *deployment shape* (personal vault topics only) is not. Subsystem-preloaded packets close that gap.
+**Is it good enough today?** Method yes; we still need the full terminal map **and** subsystem-shipped packets. Packets alone are not the fast path.
 
 ---
 
 ## 9. Next concrete spike (when you say go)
 
-Stacked work:
+Stacked work (terminal first-class throughout):
 
-1. **Package seed:** `subsystems/voice/coherence/topics/voice-law/` from existing first-run atoms; materialize into vault on startup (seed loader twin of utterance_seed).  
-2. **Lane:** after curated miss → union query-aware packet over enabled subsystem topics → speak / miss.  
-3. **Eval CI:** `coherence eval` fixtures on `voice-law` (+ Mars control).  
+1. **Keep extending** utterance_seed / curated / registry coverage for real spoken commands.  
+2. **Package seed:** `subsystems/voice/coherence/topics/voice-law/` (product-law atoms); materialize like utterance_seed.  
+3. **Lane:** after curated miss → knowledge packet speak / miss → then soft feed → residual.  
+4. **Eval CI:** `coherence eval` on `voice-law` (+ Mars); separately track FREE command hit-rate from turn_audit.  
 
 No MLX on the turn.
