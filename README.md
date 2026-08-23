@@ -106,7 +106,7 @@ See [docs/qubo-formulation.md](./docs/qubo-formulation.md) for the energy model.
 | Host | Role |
 |------|------|
 | **CLI** | Reference |
-| **Grok skill** | `hosts/grok-skill/` |
+| **Agent skill** | Claude, Grok, Codex, Cursor — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) (`hosts/grok-skill/` is a pointer) |
 | **Ikonic** | Flagship product host — vault, voice, circles, glass (`hosts/ikonic/`) |
 
 Other products can speak the same packets. **Ikonic is where interest geometry becomes a personal computer.**

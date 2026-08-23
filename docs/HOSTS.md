@@ -32,7 +32,7 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 | Host | Depth | Notes |
 |------|--------|------|
 | **CLI (`coherence`)** | Full | Reference implementation |
-| **Grok / Claude skill** | Medium | Session cache + handoff |
+| **Agent skill (Claude / Grok / Codex / Cursor)** | Medium | Session cache + handoff — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) |
 | **Obsidian** | Export | Human inspect via `export` |
 | **Cursor / editors** | Inject | Packet as rules/context |
 | **Ikonic** | Full product | Vault + voice + circles + glass — **where it shines** |
