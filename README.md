@@ -3,7 +3,7 @@
 **Open method for what we share.**  
 Compress durable knowledge into **atoms** and **resilient packets**. Browse **interest intersections** — without dumping whole vaults or lives.
 
-Compatible with the classical web (URLs, markdown, RSS projections). Built so **[Ikonic](https://github.com/rivletio/ikonic)** can run a full trust stack: public → circles → inner personal.
+Compatible with the classical web (URLs, markdown, RSS projections). Built so **[Ikonic](https://ikon.me)** can run a full trust stack: public → circles → inner personal.
 
 > We are reinventing *what* we share — a new share primitive with optional bridges to the old internet.
 
