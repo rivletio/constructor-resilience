@@ -113,5 +113,4 @@ Other products can speak the same packets. **Ikonic is where interest geometry b
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).  
-Ikonic remains a separate product; this repo is the open compression + intersection method.
+AGPL — see [LICENSE](./LICENSE).
