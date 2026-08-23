@@ -35,21 +35,18 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 | **Agent skill (Claude / Grok / Codex / Cursor)** | Medium | Session cache + handoff — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) |
 | **Obsidian** | Export | Human inspect via `export` |
 | **Cursor / editors** | Inject | Packet as rules/context |
-| **Ikonic** | Full product | Vault + voice + circles + glass — **where it shines** |
 
 ---
 
-## Ikonic-specific duties
+## Host duties (policy)
 
 | Duty | Behavior |
 |------|----------|
-| Store path | `{VAULT_ROOT}/coherence/` (or `knowledge/`) |
-| Inner circle | Lifelog/mail never auto-atoms into public topics |
+| Store path | `$COHERENCE_ROOT` (or host default) |
+| Inner circle | Private/lifelog material never auto-atoms into public topics |
 | Interest surface | User-curated topics = “what I’m into” |
 | Public follow | Import/subscribe creator `atoms.json` like a feed |
 | Browse | Live `intersect(my_surface, their_surface, seed?)` |
-| Voice | FREE/about over packet first; residual only for frontier |
 | Share | Intentional packet out — reinvent *what* we share |
 
-Ikonic is not “another notes app using this library.”  
-It is the **computer for intentional interest geometry** from public web-compat surfaces through to super-secure personal vault.
+Formats are the same at every circle. **Hosts enforce policy.**

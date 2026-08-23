@@ -1,9 +1,9 @@
 # constructor-resilience
 
 **Open method for what we share.**  
-Compress durable knowledge into **atoms** and **resilient packets**. Browse **interest intersections** — without dumping whole vaults or lives.
+Compress durable knowledge into **atoms** and **resilient packets**. Browse **interest intersections** — without dumping whole transcripts or lives.
 
-Compatible with the classical web (URLs, markdown, RSS projections). Built so **[Ikonic](https://github.com/rivletio/ikonic)** can run a full trust stack: public → circles → inner personal.
+Compatible with the classical web (URLs, markdown, RSS projections). Hosts enforce circle policy: public → circles → inner personal.
 
 > We are reinventing *what* we share — a new share primitive with optional bridges to the old internet.
 
@@ -61,7 +61,7 @@ coherence review --serve   # http://127.0.0.1:8765
 # How well can the store answer arbitrary questions? (query-aware packets)
 coherence eval \
   --query "What is JEPA?" \
-  --query "How do we share interest without vault dumps?" \
+  --query "How does Y relate to Z?" \
   --ensure-model
 # → topics/<id>/eval_report.json
 # Expect: on-topic ✓, off-topic INSUFFICIENT. Use --fixed-packet to stress one global packet.
@@ -107,11 +107,10 @@ See [docs/qubo-formulation.md](./docs/qubo-formulation.md) for the energy model.
 |------|------|
 | **CLI** | Reference |
 | **Agent skill** | Claude, Grok, Codex, Cursor — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) (`hosts/grok-skill/` is a pointer) |
-| **Ikonic** | Flagship product host — vault, voice, circles, glass (`hosts/ikonic/`) |
 
-Other products can speak the same packets. **Ikonic is where interest geometry becomes a personal computer.**
+Other products can speak the same packets.
 
 ## License
 
 MIT — see [LICENSE](./LICENSE).  
-Ikonic remains a separate product; this repo is the open compression + intersection method.
+This repo is the open compression + intersection method.

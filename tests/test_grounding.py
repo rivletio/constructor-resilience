@@ -18,7 +18,7 @@ def test_grounded_near_quote():
 
 
 def test_ungrounded_invention_dropped():
-    claim = "Ikonic vaults automatically encrypt every lifelog syllable overnight."
+    claim = "Private stores automatically encrypt every personal claim overnight."
     assert not is_grounded(claim, SOURCE)
 
 
