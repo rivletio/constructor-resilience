@@ -113,4 +113,4 @@ Other products can speak the same packets. **Ikonic is where interest geometry b
 
 ## License
 
-AGPL — see [LICENSE](./LICENSE).
+MIT — see [LICENSE](./LICENSE).
