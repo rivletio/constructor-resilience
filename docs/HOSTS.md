@@ -33,6 +33,7 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 |------|--------|------|
 | **CLI (`coherence`)** | Full | Reference implementation |
 | **Agent skill (Claude / Grok / Codex / Cursor)** | Medium | Session cache + handoff — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) |
+| **Vault / personal computer** | Full product | `{VAULT_ROOT}/coherence/` — see [`hosts/vault/`](../hosts/vault/) |
 | **Obsidian** | Export | Human inspect via `export` |
 | **Cursor / editors** | Inject | Packet as rules/context |
 
@@ -42,11 +43,14 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 
 | Duty | Behavior |
 |------|----------|
-| Store path | `$COHERENCE_ROOT` (or host default) |
+| Store path | `$COHERENCE_ROOT`, or `{VAULT_ROOT}/coherence/` for a vault-style host |
 | Inner circle | Private/lifelog material never auto-atoms into public topics |
 | Interest surface | User-curated topics = “what I’m into” |
 | Public follow | Import/subscribe creator `atoms.json` like a feed |
 | Browse | Live `intersect(my_surface, their_surface, seed?)` |
+| Voice | Packet first; residual generation only for frontier |
 | Share | Intentional packet out — reinvent *what* we share |
+| Ensure | Cited URLs exist locally (`feeds/inbox_items`) before speaking overlap |
 
 Formats are the same at every circle. **Hosts enforce policy.**
+Vault-style hosts are first-class: same wire formats, same packets, no special fork of this package.

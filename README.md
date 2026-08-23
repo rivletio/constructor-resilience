@@ -107,8 +107,9 @@ See [docs/qubo-formulation.md](./docs/qubo-formulation.md) for the energy model.
 |------|------|
 | **CLI** | Reference |
 | **Agent skill** | Claude, Grok, Codex, Cursor — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) (`hosts/grok-skill/` is a pointer) |
+| **Vault / personal computer** | `{VAULT_ROOT}/coherence/` — same packets (`hosts/vault/`) |
 
-Other products can speak the same packets.
+Other products can speak the same packets. A vault-style host is a compatible adapter, not a fork.
 
 ## License
 
