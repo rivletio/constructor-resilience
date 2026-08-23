@@ -9,14 +9,13 @@ description = "Open coherence cache: durable atoms, resilient packets, interest 
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-authors = [{ name = "Rivlet / Ikonic contributors" }]
+authors = [{ name = "Rivlet / constructor-resilience contributors" }]
 keywords = [
   "coherence",
   "context-compression",
   "QUBO",
   "knowledge-graph",
   "interest-intersection",
-  "ikonic",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",

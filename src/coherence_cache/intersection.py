@@ -4,7 +4,7 @@ Given two topical stores (or pre-built packets), produce a resilient packet
 over the *union candidate pool* weighted toward mutual support — the live
 "browse overlap with Lex" primitive.
 
-This is host-agnostic. Ikonic maps surfaces to circle policy; this module
+This is host-agnostic. Hosts map surfaces to circle policy; this module
 only computes the overlap packet.
 """
 
