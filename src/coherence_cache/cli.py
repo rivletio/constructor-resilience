@@ -28,11 +28,15 @@ from . import search as resilience_search
 from .atoms import (
     REVIEW_ACCEPTED,
     REVIEW_PENDING,
+    VALID_REVIEW,
     active_atoms,
+    atom_review_status,
     atom_text,
     atom_texts,
+    back_out,
     make_atom,
     normalize_store_atoms,
+    set_review,
 )
 
 extract_references = _refs_mod.extract_references
@@ -376,6 +380,89 @@ def cmd_mint(args):
         f"(dropped {n_drop} ungrounded) from {source_label} "
         f"→ review with: coherence review --serve"
     )
+
+
+def _atom_at(store: dict, idx: int, expected_text: str | None = None):
+    atoms = store.get("atoms") or []
+    if not (0 <= idx < len(atoms)):
+        raise SystemExit(f"atom index {idx} out of range (n={len(atoms)})")
+    atom = atoms[idx]
+    if expected_text is not None and atom_text(atom) != expected_text.strip():
+        raise SystemExit(
+            f"atom #{idx} text does not match --text\n  have: {atom_text(atom)}"
+        )
+    return atoms, atom
+
+
+def _rebuild_greedy_packet(active, path, store, *, max_size: int = 6):
+    """Rebuild packet.json from non-rejected atoms. Returns the packet path or None."""
+    path = Path(path)
+    packet_path = path.with_name("packet.json")
+    texts = _search_atoms(store)
+    if not texts:
+        print("no active atoms; packet not rebuilt")
+        return None
+    cons = _active_consistency(store)
+    selected, eng = resilience_search.greedy_resilient(
+        texts, cons, max_size=max_size, redundancy_scale=2.0
+    )
+    topic_id = active.get("id") or active.get("topic_id") or path.parent.name
+    doc = build_packet_doc(
+        topic_id, store.get("atoms") or [], selected, eng, "greedy", max_size, 2.0
+    )
+    write_packet(path, doc)
+    return packet_path
+
+
+def cmd_reject(args):
+    """Back out an atom: keep for audit, drop from packets/search."""
+    active, path, store = load_active_store()
+    store = normalize_store_atoms(store)
+    reason = (getattr(args, "reason", None) or "").strip()
+    if not reason:
+        raise SystemExit("reject/backout requires --reason")
+    atoms, atom = _atom_at(store, args.index, getattr(args, "text", None))
+    prev = atom_review_status(atom)
+    atoms[args.index] = back_out(atom, reason=reason)
+    store["atoms"] = atoms
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"Backed out atom #{args.index} [{prev} → rejected]")
+    print(f"  reason: {reason}")
+    print("  kept on disk for audit; excluded from packets/search")
+    if not getattr(args, "no_rebuild", False):
+        packet_path = Path(path).with_name("packet.json")
+        if packet_path.exists():
+            rebuilt = _rebuild_greedy_packet(active, path, store)
+            if rebuilt:
+                print(f"  rebuilt {rebuilt}")
+
+
+def cmd_set_review(args):
+    """Set review.status on an atom by index (headless; includes restore)."""
+    active, path, store = load_active_store()
+    store = normalize_store_atoms(store)
+    atoms, atom = _atom_at(store, args.index, getattr(args, "text", None))
+    prev = atom_review_status(atom)
+    if args.status == "rejected":
+        reason = (args.notes or "").strip()
+        if not reason:
+            raise SystemExit("set-review --status rejected requires --notes (the reason)")
+        atoms[args.index] = back_out(atom, reason=reason)
+    else:
+        atoms[args.index] = set_review(atom, args.status, notes=args.notes)
+    store["atoms"] = atoms
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"Atom #{args.index} review {prev} → {atom_review_status(atoms[args.index])}")
+    if not getattr(args, "no_rebuild", False):
+        packet_path = Path(path).with_name("packet.json")
+        if packet_path.exists():
+            rebuilt = _rebuild_greedy_packet(active, path, store)
+            if rebuilt:
+                print(f"  rebuilt {rebuilt}")
 
 
 def cmd_review(args):
@@ -1549,6 +1636,53 @@ def main(argv=None):
         help="Normalize atoms.json to structured records without serving",
     )
     p_rev.set_defaults(func=cmd_review)
+
+    def _add_backout_args(p):
+        p.add_argument("index", type=int, help="Atom index in the active store")
+        p.add_argument(
+            "--reason",
+            required=True,
+            help="Why the atom is being backed out (ill-defined or failed constraint)",
+        )
+        p.add_argument(
+            "--text",
+            help="If set, must exactly match the atom text (safety guard)",
+        )
+        p.add_argument(
+            "--no-rebuild",
+            action="store_true",
+            help="Do not rebuild packet.json after the status change",
+        )
+        p.set_defaults(func=cmd_reject)
+
+    _add_backout_args(
+        sub.add_parser(
+            "reject",
+            help="Back out an atom (ill-defined or failed possibility/impossibility); keep for audit",
+        )
+    )
+    _add_backout_args(
+        sub.add_parser(
+            "backout",
+            help="Alias for reject — retract an atom that does not constrain possibility/impossibility",
+        )
+    )
+
+    p_sr = sub.add_parser(
+        "set-review",
+        help="Set review status on an atom by index (headless accept/restore/reject)",
+    )
+    p_sr.add_argument("index", type=int)
+    p_sr.add_argument(
+        "--status",
+        required=True,
+        choices=sorted(VALID_REVIEW),
+        help="pending | accepted | edited | rejected",
+    )
+    p_sr.add_argument("--notes", default=None, help="Review notes (required when status=rejected)")
+    p_sr.add_argument("--text", help="If set, must exactly match the atom text")
+    p_sr.add_argument("--no-rebuild", action="store_true")
+    p_sr.set_defaults(func=cmd_set_review)
 
     p_crit = sub.add_parser(
         "critique",

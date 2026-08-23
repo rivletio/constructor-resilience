@@ -58,6 +58,10 @@ coherence critique --source-file ./notes.md --apply
 # Slick HTML reviewer — accept / edit / reject (shows critique chips)
 coherence review --serve   # http://127.0.0.1:8765
 
+# Headless back-out (ill-defined, or claimed possibility/impossibility failed)
+coherence reject 3 --reason "claimed impossibility does not hold"
+# alias: coherence backout 3 --reason "…"
+
 # How well can the store answer arbitrary questions? (query-aware packets)
 coherence eval \
   --query "What is JEPA?" \

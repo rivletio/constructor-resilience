@@ -127,6 +127,28 @@ def set_review(
     review["reviewed_at"] = now_iso()
     if notes is not None:
         review["notes"] = notes
+    if status != REVIEW_REJECTED:
+        review.pop("backed_out", None)
+    atom["review"] = review
+    return atom
+
+
+def back_out(atom: Any, *, reason: str) -> dict:
+    """Retract an atom that was ill-defined or failed its claimed constraint.
+
+    Constructor-theoretic: an atom must actually create a possibility or an
+    impossibility. If it does not, mark it rejected in place. Indices stay
+    stable; ``is_active`` drops it from packets and search. The record remains
+    on disk for audit.
+    """
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("back_out requires a reason")
+    previous = atom_review_status(atom)
+    atom = set_review(atom, REVIEW_REJECTED, notes=reason)
+    review = dict(atom.get("review") or {})
+    review["previous_status"] = previous
+    review["backed_out"] = True
     atom["review"] = review
     return atom
 
@@ -163,6 +185,11 @@ def normalize_store_atoms(store: dict) -> dict:
 ATOM_QUALITY_LAW = """\
 Only emit DURABLE claims — facts, constraints, decisions, or partial explanations
 worth injecting into a future agent turn on this topic.
+
+A well-formed atom constrains possibility or impossibility on the topic
+(a constructor-fragment). If a minted atom is later found ill-defined, or
+does not actually create the possibility/impossibility it claimed, back it
+out (reject in place). Do not delete; indices stay stable for audit.
 
 DO NOT emit:
 - greetings, filler, or process chatter ("ok let's continue")

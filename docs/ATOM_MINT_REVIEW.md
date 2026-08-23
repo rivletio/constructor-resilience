@@ -12,6 +12,19 @@ So every minted claim must answer:
 Unreviewed mint output is `pending`. Rejected claims stay on disk for audit
 but leave packets and search.
 
+**Back out** is the same reject status, used after the fact: if an atom was
+ill-defined, or later found not to create the possibility / impossibility it
+claimed, retract it without deleting it.
+
+```bash
+coherence reject 3 --reason "claimed impossibility does not hold"
+# alias: coherence backout 3 --reason "…"
+coherence packet --rebuild   # reject already rebuilds packet.json when present
+```
+
+Indices stay stable. `set-review INDEX --status accepted` restores if the
+constructor later checks out.
+
 ## Pipeline
 
 ```

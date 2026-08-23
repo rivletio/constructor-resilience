@@ -99,6 +99,8 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 
 **Review law:** minted atoms start `pending`. Rejected atoms stay for audit but are excluded from packets/search. Plain strings are treated as `accepted` (legacy).
 
+**Back-out law:** if an atom was ill-defined, or later found not to create the possibility or impossibility it claimed, mark it `rejected` in place (`coherence reject INDEX --reason "…"`). Do not delete — indices stay stable. Optional fields on `review`: `backed_out` (bool), `previous_status`. Packet rebuild drops the atom automatically.
+
 ---
 
 ## `topics/<id>/packet.json` (resilient packet)
