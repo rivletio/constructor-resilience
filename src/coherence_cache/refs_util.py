@@ -50,6 +50,85 @@ def youtube_watch_url(video_id: str, t: int | None = None) -> str:
     return url
 
 
+_ARXIV_CORE = r"(\d{4}\.\d{4,5})(?:v\d+)?"
+
+
+def normalize_arxiv_id(aid: str) -> str:
+    aid = (aid or "").strip()
+    return re.sub(r"v\d+$", "", aid, flags=re.I)
+
+
+def arxiv_passage_url(
+    aid: str,
+    *,
+    page: int | None = None,
+    html_id: str | None = None,
+) -> str:
+    """Open the original arXiv artifact. PDF #page= works for every paper."""
+    aid = normalize_arxiv_id(aid)
+    if page:
+        return f"https://arxiv.org/pdf/{aid}#page={int(page)}"
+    if html_id:
+        return f"https://arxiv.org/html/{aid}#{html_id.lstrip('#')}"
+    return f"https://arxiv.org/abs/{aid}"
+
+
+def make_arxiv_ref(
+    aid: str,
+    *,
+    page: int | None = None,
+    section: str | None = None,
+    excerpt: str | None = None,
+    html_id: str | None = None,
+) -> Dict[str, Any]:
+    aid = normalize_arxiv_id(aid)
+    loc = arxiv_passage_url(aid, page=page, html_id=html_id)
+    label = f"arXiv:{aid}"
+    if page:
+        label += f" p.{int(page)}"
+    if section:
+        label += f" §{section}"
+    rec: Dict[str, Any] = {
+        "kind": "arxiv",
+        "id": aid,
+        "label": label,
+        "url": loc,
+        "abs": f"https://arxiv.org/abs/{aid}",
+        "pdf": f"https://arxiv.org/pdf/{aid}",
+        "html": f"https://arxiv.org/html/{aid}",
+    }
+    if page:
+        rec["page"] = int(page)
+    if section:
+        rec["section"] = str(section)
+    if html_id:
+        rec["html_id"] = html_id.lstrip("#")
+    if excerpt:
+        rec["excerpt"] = re.sub(r"\s+", " ", excerpt).strip()
+    return rec
+
+
+def parse_arxiv_url(url: str) -> Optional[Dict[str, Any]]:
+    m = re.search(
+        rf"arxiv\.org/(?:abs|pdf|html)/{_ARXIV_CORE}",
+        url or "",
+        re.I,
+    )
+    if not m:
+        return None
+    aid = normalize_arxiv_id(m.group(1))
+    page = None
+    pm = re.search(r"#page=(\d+)", url or "", re.I)
+    if pm:
+        page = int(pm.group(1))
+    html_id = None
+    if "/html/" in url and "#" in url and not pm:
+        frag = url.split("#", 1)[1]
+        if frag and not frag.lower().startswith("page="):
+            html_id = frag
+    return make_arxiv_ref(aid, page=page, html_id=html_id)
+
+
 def parse_youtube_url(url: str) -> Optional[Dict[str, Any]]:
     m = _YT_ID.search(url or "")
     if not m:
@@ -74,37 +153,59 @@ def extract_references(text: str) -> List[Dict[str, str]]:
     found: List[Dict[str, str]] = []
     seen = set()
 
-    for m in re.finditer(r"arXiv[:\s]+(\d{4}\.\d{4,5})(?:v\d+)?", text, re.I):
-        aid = m.group(1)
-        if aid not in seen:
-            seen.add(aid)
-            found.append(
-                {
-                    "kind": "arxiv",
-                    "id": aid,
-                    "label": f"arXiv:{aid}",
-                    "url": f"https://arxiv.org/abs/{aid}",
-                }
-            )
+    def _page_near(end: int) -> int | None:
+        tail = text[end : end + 48]
+        pm = re.match(
+            r"(?:v\d+)?(?:\s*[,;:]?\s*(?:#page=|p(?:age)?\.?\s*))(\d+)",
+            tail,
+            re.I,
+        )
+        return int(pm.group(1)) if pm else None
 
-    for m in re.finditer(r"\b(\d{4}\.\d{4,5})(?:v\d+)?\b", text):
-        aid = m.group(1)
-        if aid in seen:
+    def _add_arxiv(aid: str, page: int | None) -> None:
+        aid = normalize_arxiv_id(aid)
+        key = f"arxiv:{aid}"
+        rec = make_arxiv_ref(aid, page=page)
+        if key in seen:
+            # Prefer a more specific locator (PDF page) if we already stored abs.
+            for i, prev in enumerate(found):
+                if prev.get("kind") == "arxiv" and prev.get("id") == aid:
+                    if page and not prev.get("page"):
+                        found[i] = rec
+                    return
+            return
+        seen.add(key)
+        found.append(rec)
+
+    for m in re.finditer(r"https?://[^\s<>)\]\"']+", text):
+        url = m.group(0).rstrip(".,;:)")
+        if url in seen:
             continue
+        yt = parse_youtube_url(url)
+        if yt:
+            seen.add(url)
+            seen.add(yt["youtube_video_id"])
+            found.append(yt)
+            continue
+        ax = parse_arxiv_url(url)
+        if ax:
+            seen.add(url)
+            _add_arxiv(ax["id"], ax.get("page"))
+            continue
+        seen.add(url)
+        found.append({"kind": "url", "id": url, "label": url, "url": url})
+
+    for m in re.finditer(rf"arXiv[:\s]+{_ARXIV_CORE}", text, re.I):
+        _add_arxiv(m.group(1), _page_near(m.end()))
+
+    for m in re.finditer(rf"\b{_ARXIV_CORE}\b", text):
+        aid = normalize_arxiv_id(m.group(1))
         try:
             yymm = int(aid.split(".")[0])
         except ValueError:
             continue
         if 1500 <= yymm <= 2999:
-            seen.add(aid)
-            found.append(
-                {
-                    "kind": "arxiv",
-                    "id": aid,
-                    "label": f"arXiv:{aid}",
-                    "url": f"https://arxiv.org/abs/{aid}",
-                }
-            )
+            _add_arxiv(aid, _page_near(m.end()))
 
     for m in re.finditer(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b", text):
         doi = m.group(1).rstrip(".")
@@ -118,19 +219,6 @@ def extract_references(text: str) -> List[Dict[str, str]]:
                     "url": f"https://doi.org/{doi}",
                 }
             )
-
-    for m in re.finditer(r"https?://[^\s<>)\]\"']+", text):
-        url = m.group(0).rstrip(".,;:)")
-        if url in seen:
-            continue
-        yt = parse_youtube_url(url)
-        if yt:
-            seen.add(url)
-            seen.add(yt["youtube_video_id"])
-            found.append(yt)
-            continue
-        seen.add(url)
-        found.append({"kind": "url", "id": url, "label": url, "url": url})
 
     return found
 
@@ -153,7 +241,7 @@ def linkify_claim(text: str) -> str:
         elif r["kind"] == "doi":
             labeled = f"[{r['label']}]({r['url']})"
             out = re.sub(re.escape(r["id"]), labeled, out, count=1)
-        elif r["kind"] == "url":
-            if f"]({r['url']})" not in out:
+        elif r["kind"] in ("url", "youtube_video"):
+            if r.get("url") and f"]({r['url']})" not in out:
                 out = out.replace(r["url"], f"[link]({r['url']})")
     return out

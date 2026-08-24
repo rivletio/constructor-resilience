@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "description": "Public paper surface: arXiv 1706.03762 with PDF page locators (original article, not a mirror).",
+  "created": "2026-08-24T00:00:00Z",
+  "updated": "2026-08-24T00:00:00Z",
+  "atoms": [
+    {
+      "text": "The Transformer is a transduction model based solely on attention, dispensing with recurrence and convolutions.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 1,
+          "excerpt": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely.",
+        "created": "2026-08-24T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-24T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 PDF page 1"
+      }
+    }
+  ],
+  "consistency": {}
+}

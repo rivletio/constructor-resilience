@@ -95,7 +95,7 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 | `atoms[].text` | When object: the claim string (search/packet use this) |
 | `atoms[].constraint` | Optional constructor kind: `possibility` \| `impossibility` \| `fact` \| `decision` |
 | `atoms[].mentions` | Optional joins: `[{name, kind}]` where kind is `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. **Not** a second graph. |
-| `atoms[].refs` | Optional citations: arXiv / DOI / URL / **youtube_video** (`youtube_video_id`, `t` seconds, `t_label`, `url` with `&t=`) |
+| `atoms[].refs` | Optional citations. **youtube_video**: `youtube_video_id`, `t` (seconds), `t_label`, `url` with `&t=` (original video). **arxiv**: `id`, `abs` / `pdf` / `html`, `page` (PDF `#page=N` — works for every paper), optional `section`, `excerpt`, `html_id`. `url` is the locator that opens the original artifact at that passage. DOI/URL locators can reuse `page`/`excerpt` later. |
 | `atoms[].provenance` | **HOW it was made** — method, model, source, excerpt (required for mint) |
 | `atoms[].review.status` | `pending` \| `accepted` \| `edited` \| `rejected` |
 | `consistency` | Keys `"i,j"` with `i < j`; scores in **[-1, 1]** |

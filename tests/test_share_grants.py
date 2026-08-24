@@ -124,3 +124,48 @@ def test_youtube_timestamp_parsed_from_url_and_atom_refs():
     )
     times = {r.get("t") for r in two}
     assert times == {2904, 3033}
+
+
+def test_arxiv_passage_url_opens_original_pdf_page():
+    from coherence_cache.refs_util import (
+        extract_references,
+        make_arxiv_ref,
+        parse_arxiv_url,
+    )
+    from coherence_cache.share import extract_content_refs
+
+    rec = make_arxiv_ref("1706.03762v5", page=2, excerpt="The Transformer follows this overall architecture")
+    assert rec["id"] == "1706.03762"
+    assert rec["abs"] == "https://arxiv.org/abs/1706.03762"
+    assert rec["pdf"] == "https://arxiv.org/pdf/1706.03762"
+    assert rec["url"] == "https://arxiv.org/pdf/1706.03762#page=2"
+    assert rec["page"] == 2
+    assert "Transformer" in rec["excerpt"]
+
+    parsed = parse_arxiv_url("https://arxiv.org/pdf/1706.03762#page=3")
+    assert parsed["id"] == "1706.03762"
+    assert parsed["page"] == 3
+    assert parsed["url"].endswith("#page=3")
+
+    found = extract_references("See arXiv:1706.03762 p.2 for the architecture claim.")
+    ax = next(r for r in found if r["kind"] == "arxiv")
+    assert ax["page"] == 2
+    assert ax["url"] == "https://arxiv.org/pdf/1706.03762#page=2"
+
+    atom = {
+        "text": "The Transformer dispenses with recurrence and convolutions.",
+        "refs": [{"kind": "arxiv", "id": "1706.03762", "page": 1}],
+    }
+    refs = extract_content_refs([atom])
+    assert refs[0]["kind"] == "arxiv"
+    assert refs[0]["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
+    pages = extract_content_refs(
+        [
+            atom,
+            {
+                "text": "later page",
+                "refs": [{"kind": "arxiv", "id": "1706.03762", "page": 5}],
+            },
+        ]
+    )
+    assert {r["page"] for r in pages} == {1, 5}

@@ -71,7 +71,12 @@ def make_share(
 
 def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
     """Pull URLs / youtube ids (with timestamp) from atom text and refs."""
-    from .refs_util import extract_references, parse_youtube_url
+    from .refs_util import (
+        extract_references,
+        make_arxiv_ref,
+        parse_arxiv_url,
+        parse_youtube_url,
+    )
     from .search import as_text
 
     refs: List[Dict[str, Any]] = []
@@ -106,6 +111,20 @@ def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
                 if yt:
                     rec = {**yt, **{k: v for k, v in rec.items() if v is not None}}
                     rec["kind"] = "youtube_video"
+                ax = parse_arxiv_url(url) if url else None
+                if rec.get("kind") == "arxiv" or ax:
+                    aid = rec.get("id") or (ax or {}).get("id")
+                    if aid:
+                        base = make_arxiv_ref(
+                            aid,
+                            page=rec.get("page") or (ax or {}).get("page"),
+                            section=rec.get("section"),
+                            excerpt=rec.get("excerpt"),
+                            html_id=rec.get("html_id") or (ax or {}).get("html_id"),
+                        )
+                        rec = {**base, **{k: v for k, v in rec.items() if v is not None}}
+                        rec["kind"] = "arxiv"
+                        rec["url"] = base["url"]
                 _add(rec, text)
         for r in extract_references(text):
             _add(r, text)
