@@ -116,6 +116,26 @@ def test_pack_from_empty_store_writes_packet(tmp_path, capsys):
     assert "Packets are the share unit" in packet["atoms"][0]
 
 
+def test_cache_ignores_weak_tokens(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Packet search",
+        "--atom",
+        "A packet is a small subset of atoms maximizing coverage.",
+    )
+    capsys.readouterr()
+    _run(root, "cache", "small-world scale-free co-authorship")
+    out = capsys.readouterr().out
+    assert "CACHE MISS" in out
+    _run(root, "cache", "packet coverage atoms")
+    hit = capsys.readouterr().out
+    assert "CACHE HIT" in hit
+    assert "packet-search" in hit
+
+
 def test_pack_atoms_flags_no_json_file(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(

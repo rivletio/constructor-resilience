@@ -309,6 +309,7 @@ _STOP = frozenset(
     not no nor so at into about over under after before when while who which what
     how why can could should would may might must will shall do does did done
     have has had having also just only very more most other such own same
+    small large using used based via each both many few new old first last
     """.split()
 )
 

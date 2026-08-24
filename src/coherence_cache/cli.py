@@ -24,11 +24,13 @@ from .atoms import (
     atom_texts,
     back_out,
     coerce_atom,
+    content_tokens,
     make_atom,
     normalize_store_atoms,
     parse_ingest_payload,
     set_review,
 )
+from .search import token_set
 
 extract_references = _refs_mod.extract_references
 linkify_claim = _refs_mod.linkify_claim
@@ -276,10 +278,6 @@ def parse_consistency_map(store: dict) -> dict:
 
 def dump_consistency_map(cons: dict) -> dict:
     return {f"{i},{j}": round(float(s), 4) for (i, j), s in sorted(cons.items())}
-
-
-def token_set(s: str) -> set:
-    return set(re.findall(r"[a-z0-9]+", s.lower()))
 
 
 def heuristic_pair_score(a, b) -> float:
@@ -1206,13 +1204,13 @@ def _topic_blob(topic: dict) -> str:
 def cmd_find(args):
     """Rank topics by keyword overlap with a query (fast cache routing)."""
     meta = load_meta()
-    q = set(re.findall(r"[a-z0-9]+", args.query.lower()))
+    q = content_tokens(args.query)
     if not q:
         raise SystemExit("Empty query")
     ranked = []
     for t in meta.get("topics", []):
         blob = _topic_blob(t)
-        tokens = set(re.findall(r"[a-z0-9]+", blob))
+        tokens = content_tokens(blob)
         inter = len(q & tokens)
         if inter == 0:
             continue
@@ -1230,11 +1228,15 @@ def cmd_find(args):
 def cmd_cache(args):
     """Fast cache layer: find topics for query, emit greedy resilient packets."""
     meta = load_meta()
-    q = set(re.findall(r"[a-z0-9]+", args.query.lower()))
+    q = content_tokens(args.query)
+    if not q:
+        print("CACHE MISS — no matching topics.")
+        print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')
+        return
     ranked = []
     for t in meta.get("topics", []):
         blob = _topic_blob(t)
-        tokens = set(re.findall(r"[a-z0-9]+", blob))
+        tokens = content_tokens(blob)
         inter = len(q & tokens)
         if inter == 0 and not args.all:
             continue
