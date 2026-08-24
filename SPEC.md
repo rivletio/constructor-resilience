@@ -162,6 +162,8 @@ Output of `intersect mine theirs` — **browse primitive**.
 
 Hosts SHOULD re-run intersect when the user changes topic dials, seed query, or max size (**realtime browse**).
 
+Cross-surface edges use lexical/stem overlap and shared mention names. Internal consistency is damped. If `require_cross` (default) and there are no cross-edges, the packet is empty — no filling from dense hubs on one side.
+
 ---
 
 ## `intentional_share` (share envelope)

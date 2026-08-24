@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .search import as_text, greedy_resilient, lexical_similarity
+from .mentions import extract_mentions
+from .search import as_text, greedy_resilient, lexical_similarity, token_set
 
 Pair = Tuple[int, int]
 
@@ -34,16 +35,56 @@ def _parse_consistency(store: dict) -> Dict[Pair, float]:
     return out
 
 
+def _mention_names(atom) -> set[str]:
+    names: set[str] = set()
+    if isinstance(atom, dict):
+        for m in atom.get("mentions") or []:
+            if isinstance(m, dict):
+                n = str(m.get("name") or "").strip().lower()
+            else:
+                n = str(m).strip().lower()
+            if n:
+                names.add(n)
+    for m in extract_mentions(as_text(atom)):
+        names.add(str(m.get("name") or "").strip().lower())
+    names.discard("")
+    return names
+
+
+def _stem_tokens(text) -> set[str]:
+    toks = token_set(text)
+    out = set(toks)
+    for t in toks:
+        if len(t) > 4 and t.endswith("s"):
+            out.add(t[:-1])
+    return out
+
+
+def cross_affinity(a, b) -> float:
+    """Lexical Jaccard, stem Jaccard, and shared mention names."""
+    ta, tb = as_text(a), as_text(b)
+    lex = lexical_similarity(ta, tb)
+    sa, sb = _stem_tokens(ta), _stem_tokens(tb)
+    stem = (len(sa & sb) / len(sa | sb)) if sa and sb else 0.0
+    ma, mb = _mention_names(a), _mention_names(b)
+    mention = 0.0
+    if ma and mb:
+        mention = len(ma & mb) / len(ma | mb)
+        if ma & mb:
+            mention = max(mention, 0.62)
+    return max(lex, stem, mention)
+
+
 def align_cross_atoms(
-    mine: Sequence[str],
-    theirs: Sequence[str],
+    mine: Sequence,
+    theirs: Sequence,
     min_sim: float = 0.18,
 ) -> List[Tuple[int, int, float]]:
-    """Soft alignment edges between my atom i and their atom j by lexical sim."""
+    """Soft alignment edges between my atom i and their atom j."""
     links: List[Tuple[int, int, float]] = []
     for i, a in enumerate(mine):
         for j, b in enumerate(theirs):
-            s = lexical_similarity(a, b)
+            s = cross_affinity(a, b)
             if s >= min_sim:
                 links.append((i, j, s))
     return links
@@ -65,23 +106,24 @@ def build_intersection_pool(
 
     Cross edges use lexical alignment (and optional seed boost).
     """
-    mine = [as_text(a) for a in (my_store.get("atoms") or [])]
-    theirs = [as_text(a) for a in (their_store.get("atoms") or [])]
+    mine_raw = list(my_store.get("atoms") or [])
+    theirs_raw = list(their_store.get("atoms") or [])
+    mine = [as_text(a) for a in mine_raw]
+    theirs = [as_text(a) for a in theirs_raw]
     pool: List[str] = mine + theirs
     n_mine = len(mine)
     cons: Dict[Pair, float] = {}
 
-    # Internal edges from each store, remapped for "theirs"
+    # Internal edges, damped so dense hubs cannot drown the overlap.
     for (i, j), s in _parse_consistency(my_store).items():
-        cons[(i, j)] = s
+        cons[(i, j)] = 0.4 * s
     for (i, j), s in _parse_consistency(their_store).items():
-        cons[(i + n_mine, j + n_mine)] = s
+        cons[(i + n_mine, j + n_mine)] = 0.4 * s
 
-    # Cross-surface affinity
-    for i, j, s in align_cross_atoms(mine, theirs, min_sim=min_cross_sim):
+    # Cross-surface affinity (lexical + stems + mention joins)
+    for i, j, s in align_cross_atoms(mine_raw, theirs_raw, min_sim=min_cross_sim):
         a, b = (i, j + n_mine) if i < j + n_mine else (j + n_mine, i)
-        # Soft positive support for related interests across people
-        cons[(a, b)] = max(cons.get((a, b), 0.0), min(0.9, 0.35 + 0.7 * s))
+        cons[(a, b)] = max(cons.get((a, b), 0.0), min(0.95, 0.4 + 0.7 * s))
 
     # Seed query: boost atoms that mention query tokens via pairwise glue
     # to a virtual high-coverage hub (implemented as extra self-preference
@@ -111,7 +153,7 @@ def build_intersection_pool(
     for j, b in enumerate(theirs):
         provenance.append({"index": j + n_mine, "source": "theirs", "text": b})
 
-    return pool, cons, provenance
+    return pool, cons, provenance, n_mine
 
 
 def intersection_packet(
@@ -130,13 +172,16 @@ def intersection_packet(
     If ``require_cross`` is True, prefer packets that include at least one
     atom from each side when possible (true intersection flavor).
     """
-    pool, cons, provenance = build_intersection_pool(
+    built = build_intersection_pool(
         my_store,
         their_store,
         min_cross_sim=min_cross_sim,
         seed_query=seed_query,
     )
-    n_mine = len(my_store.get("atoms") or [])
+    pool, cons, provenance, n_mine = built
+    n_mine_orig = n_mine
+    n_theirs_orig = len(pool) - n_mine
+    n_union = len(pool)
     if not pool:
         return {
             "version": 1,
@@ -149,6 +194,36 @@ def intersection_packet(
             "provenance": [],
         }
 
+    if require_cross and n_mine > 0 and len(pool) > n_mine:
+        linked: set[int] = set()
+        for (i, j) in cons:
+            if (i < n_mine) != (j < n_mine):
+                linked.add(i)
+                linked.add(j)
+        if seed_query:
+            q_tokens = [t for t in seed_query.lower().split() if len(t) > 2]
+            for idx, atom in enumerate(pool):
+                al = atom.lower()
+                if any(t in al for t in q_tokens):
+                    linked.add(idx)
+        if not linked:
+            pool, cons, provenance, n_mine = [], {}, [], 0
+        elif linked:
+            keep = sorted(linked)
+            remap = {old: new for new, old in enumerate(keep)}
+            sub_pool = [pool[i] for i in keep]
+            sub_cons: Dict[Pair, float] = {}
+            for (i, j), s in cons.items():
+                if i in remap and j in remap:
+                    a, b = remap[i], remap[j]
+                    if a > b:
+                        a, b = b, a
+                    if a != b:
+                        sub_cons[(a, b)] = s
+            pool, cons, n_mine_sub = sub_pool, sub_cons, sum(1 for i in keep if i < n_mine)
+            provenance = [provenance[i] for i in keep]
+            n_mine = n_mine_sub
+
     selected, eng = greedy_resilient(
         pool,
         cons,
@@ -156,28 +231,30 @@ def intersection_packet(
         redundancy_scale=redundancy_scale,
     )
 
-    # If we got a one-sided packet and both sides non-empty, force a balanced try
-    if require_cross and n_mine > 0 and len(pool) > n_mine:
+    if require_cross and n_mine > 0 and len(pool) > n_mine and selected:
         sources = set()
         for s in selected:
             idx = pool.index(s)
             sources.add("mine" if idx < n_mine else "theirs")
         if sources != {"mine", "theirs"} and max_size >= 2:
-            # Greedy from each side: take best from mine and theirs by degree
-            mine_idxs = list(range(n_mine))
-            their_idxs = list(range(n_mine, len(pool)))
 
-            def degree(i: int) -> float:
-                return sum(abs(s) for (a, b), s in cons.items() if a == i or b == i)
+            def cross_degree(i: int) -> float:
+                total = 0.0
+                for (a, b), s in cons.items():
+                    if a != i and b != i:
+                        continue
+                    other = b if a == i else a
+                    if (i < n_mine) != (other < n_mine):
+                        total += abs(s)
+                return total
 
-            mine_idxs.sort(key=degree, reverse=True)
-            their_idxs.sort(key=degree, reverse=True)
+            mine_idxs = sorted(range(n_mine), key=cross_degree, reverse=True)
+            their_idxs = sorted(range(n_mine, len(pool)), key=cross_degree, reverse=True)
             forced: List[str] = []
-            if mine_idxs:
+            if mine_idxs and cross_degree(mine_idxs[0]) > 0:
                 forced.append(pool[mine_idxs[0]])
-            if their_idxs:
+            if their_idxs and cross_degree(their_idxs[0]) > 0:
                 forced.append(pool[their_idxs[0]])
-            # Fill remainder with greedy on full pool, skipping already chosen
             rest, eng2 = greedy_resilient(
                 pool,
                 cons,
@@ -187,17 +264,20 @@ def intersection_packet(
             for a in rest:
                 if a not in forced and len(forced) < max_size:
                     forced.append(a)
-            selected = forced[:max_size]
-            eng = eng2
+            if forced:
+                selected = forced[:max_size]
+                eng = eng2
 
     indices = []
+    prov_sel = []
     for s in selected:
         try:
-            indices.append(pool.index(s))
+            i = pool.index(s)
         except ValueError:
             continue
-
-    prov_sel = [provenance[i] for i in indices if i < len(provenance)]
+        p = provenance[i] if i < len(provenance) else {"index": i, "source": "?", "text": s}
+        indices.append(int(p.get("index", i)))
+        prov_sel.append(p)
     return {
         "version": 1,
         "kind": "interest_intersection",
@@ -208,7 +288,7 @@ def intersection_packet(
         "atom_indices": indices,
         "atoms": list(selected),
         "provenance": prov_sel,
-        "atom_count_source": len(pool),
-        "n_mine": n_mine,
-        "n_theirs": len(pool) - n_mine,
+        "atom_count_source": n_union,
+        "n_mine": n_mine_orig,
+        "n_theirs": n_theirs_orig,
     }

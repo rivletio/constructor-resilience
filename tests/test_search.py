@@ -95,6 +95,74 @@ def test_intersection_includes_both_sides_when_possible():
     assert sources == {"mine", "theirs"} or len(doc["atoms"]) >= 1
 
 
+def test_intersection_prefers_cross_links_not_internal_hubs():
+    mine = {
+        "atoms": [
+            "Interest intersection is the browse primitive over two surfaces.",
+            "Share envelopes copy mention joins from the packet.",
+            "Duplicate claims are skipped so re-packing does not grow the store.",
+        ],
+        "consistency": {"0,1": 0.5, "1,2": 0.85, "0,2": 0.4},
+    }
+    theirs = {
+        "atoms": [
+            "Listeners meet creators at the intersection of mutual curiosity.",
+            "Interest in consciousness, AI, and the nature of understanding.",
+            "Long-form conversation explores hard ideas in public.",
+        ],
+        "consistency": {"0,1": 0.9, "1,2": 0.85, "0,2": 0.8},
+    }
+    doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.12)
+    blob = " ".join(doc["atoms"]).lower()
+    assert "intersection" in blob
+    sources = {p["source"] for p in doc.get("provenance") or []}
+    assert sources == {"mine", "theirs"}
+    # Consciousness cluster is internally dense but not the overlap theme.
+    assert "consciousness" not in blob or "intersection" in blob
+
+
+def test_intersection_empty_when_no_cross_affinity():
+    mine = {
+        "atoms": ["Refs are citations extracted from claim text."],
+        "consistency": {},
+    }
+    theirs = {
+        "atoms": ["Interest in consciousness, AI, and the nature of understanding."],
+        "consistency": {},
+    }
+    doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.18)
+    assert doc["atoms"] == []
+
+
+def test_intersection_mention_join_aligns_across_wording():
+    from coherence_cache.atoms import make_atom
+
+    mine = {
+        "atoms": [
+            make_atom(
+                "JEPA predicts in latent space rather than tokens.",
+                mentions=[{"name": "JEPA", "kind": "concept"}],
+            ),
+            make_atom("Unrelated claim about packing session flags."),
+        ],
+        "consistency": {"0,1": 0.2},
+    }
+    theirs = {
+        "atoms": [
+            make_atom(
+                "V-JEPA extends the same objective to video.",
+                mentions=[{"name": "JEPA", "kind": "concept"}],
+            ),
+            make_atom("A public long-form talk about consciousness."),
+        ],
+        "consistency": {"0,1": 0.9},
+    }
+    doc = intersection_packet(mine, theirs, max_size=3, min_cross_sim=0.18)
+    blob = " ".join(doc["atoms"]).lower()
+    assert "jepa" in blob
+    assert "consciousness" not in blob
+
+
 def test_intersection_structured_atoms_stay_text():
     from coherence_cache.atoms import make_atom
 
