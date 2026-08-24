@@ -1,22 +1,85 @@
 {
   "version": 1,
-  "description": "Synthetic public creator surface (illustrative Lex-class publish, not real Lex content)",
+  "description": "Public creator surface from Lex Fridman Podcast #442 (YouTube qCbfTN-caFI). Every claim cites video + timestamp.",
   "created": "2026-08-16T00:00:00Z",
-  "updated": "2026-08-16T00:00:00Z",
+  "updated": "2026-08-24T00:00:00Z",
   "atoms": [
-    "Long-form conversation is a tool for exploring hard ideas in public.",
-    "Interest in consciousness, AI, and the nature of understanding.",
-    "Guest conversations often cite papers and primary sources as shared ground.",
-    "Publishing a durable claim is different from publishing every raw take.",
-    "Listeners should be able to meet creators at the intersection of mutual curiosity."
+    {
+      "text": "A good conversation requires duration; longer form relaxes people and lets the complexity of a person show in the details.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Lex Fridman", "kind": "person"}
+      ],
+      "refs": [
+        {
+          "kind": "youtube_video",
+          "youtube_video_id": "qCbfTN-caFI",
+          "t": 3033,
+          "t_label": "50:33",
+          "url": "https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033",
+          "label": "Lex Fridman Podcast #442 @ 50:33"
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "youtube:qCbfTN-caFI",
+        "source_excerpt": "I do think a good conversation requires that kind of duration. ... I think the longer form with a hypothetical skilled conversationalist relaxes things and allows people to go on tangents and to banter about the details because I think it's in the details that the beautiful complexity of the person is brought to light.",
+        "created": "2026-08-24T00:00:00Z"
+      },
+      "review": {"status": "accepted", "reviewed_at": "2026-08-24T00:00:00Z", "notes": "Grounded in #442 at 50:33"}
+    },
+    {
+      "text": "Each conversation is its own unique puzzle; there is no general formula for how to approach one.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Lex Fridman", "kind": "person"}
+      ],
+      "refs": [
+        {
+          "kind": "youtube_video",
+          "youtube_video_id": "qCbfTN-caFI",
+          "t": 2904,
+          "t_label": "48:24",
+          "url": "https://www.youtube.com/watch?v=qCbfTN-caFI&t=2904",
+          "label": "Lex Fridman Podcast #442 @ 48:24"
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "youtube:qCbfTN-caFI",
+        "source_excerpt": "Now each conversation is its own unique puzzle. So I can't speak generally to how I approach these.",
+        "created": "2026-08-24T00:00:00Z"
+      },
+      "review": {"status": "accepted", "reviewed_at": "2026-08-24T00:00:00Z", "notes": "Grounded in #442 at 48:24"}
+    },
+    {
+      "text": "Convincing world leaders and their teams to talk for two to five hours is hard, and a good conversation requires that kind of duration.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Lex Fridman", "kind": "person"}
+      ],
+      "refs": [
+        {
+          "kind": "youtube_video",
+          "youtube_video_id": "qCbfTN-caFI",
+          "t": 3033,
+          "t_label": "50:33",
+          "url": "https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033",
+          "label": "Lex Fridman Podcast #442 @ 50:33"
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "youtube:qCbfTN-caFI",
+        "source_excerpt": "So to convince them and their team to talk for two, three, four, five hours is hard. And I do think a good conversation requires that kind of duration.",
+        "created": "2026-08-24T00:00:00Z"
+      },
+      "review": {"status": "accepted", "reviewed_at": "2026-08-24T00:00:00Z", "notes": "Grounded in #442 at 50:33"}
+    }
   ],
   "consistency": {
     "0,1": 0.7,
-    "0,2": 0.55,
-    "1,2": 0.75,
-    "1,3": 0.6,
-    "1,4": 0.85,
-    "3,4": 0.7,
-    "0,4": 0.5
+    "0,2": 0.85,
+    "1,2": 0.65
   }
 }

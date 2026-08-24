@@ -62,35 +62,45 @@ def make_share(
         "note": note,
         "topic_id": topic_id,
         "atoms": texts,
-        "content_refs": content_refs or extract_content_refs(texts),
+        "content_refs": content_refs or extract_content_refs(atoms),
         "mentions": mentions_from_atoms(atoms),
         "provenance": [{"source": from_id, "text": t} for t in texts],
     }
     return doc
 
 
-def extract_content_refs(atoms: List[str]) -> List[Dict[str, Any]]:
-    """Pull URLs / youtube ids from atom text for ensure-on-receive."""
-    import re
+def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
+    """Pull URLs / youtube ids (with timestamp) from atom text and refs."""
+    from .refs_util import extract_references, parse_youtube_url
+    from .search import as_text
 
     refs: List[Dict[str, Any]] = []
     seen = set()
+
+    def _add(ref: Dict[str, Any], atom_text: str) -> None:
+        key = ref.get("youtube_video_id") or ref.get("url") or ref.get("id")
+        if not key or key in seen:
+            return
+        seen.add(key)
+        out = dict(ref)
+        out.setdefault("atom", atom_text[:200])
+        refs.append(out)
+
     for a in atoms:
-        for m in re.finditer(r"https?://[^\s)\]>]+", a):
-            url = m.group(0).rstrip(".,;")
-            if url in seen:
-                continue
-            seen.add(url)
-            ref: Dict[str, Any] = {"url": url, "atom": a[:200]}
-            ym = re.search(r"(?:v=|youtu\.be/)([\w-]{11})", url)
-            if ym:
-                ref["youtube_video_id"] = ym.group(1)
-                ref["kind"] = "youtube_video"
-            elif "youtube.com" in url or "youtu.be" in url:
-                ref["kind"] = "youtube"
-            else:
-                ref["kind"] = "url"
-            refs.append(ref)
+        text = as_text(a)
+        if isinstance(a, dict):
+            for r in a.get("refs") or []:
+                if not isinstance(r, dict):
+                    continue
+                rec = dict(r)
+                url = rec.get("url") or ""
+                yt = parse_youtube_url(url) if url else None
+                if yt:
+                    rec = {**yt, **{k: v for k, v in rec.items() if v is not None}}
+                    rec["kind"] = "youtube_video"
+                _add(rec, text)
+        for r in extract_references(text):
+            _add(r, text)
     return refs
 
 

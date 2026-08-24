@@ -74,3 +74,35 @@ def test_content_refs_extracted():
     refs = s.get("content_refs") or []
     assert len(refs) == 1
     assert refs[0].get("youtube_video_id") == "abcdefghijk"
+
+
+def test_youtube_timestamp_parsed_from_url_and_atom_refs():
+    from coherence_cache.refs_util import extract_references, parse_youtube_url
+    from coherence_cache.share import extract_content_refs
+
+    yt = parse_youtube_url("https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033")
+    assert yt["youtube_video_id"] == "qCbfTN-caFI"
+    assert yt["t"] == 3033
+    assert yt["t_label"] == "50:33"
+    assert yt["url"].endswith("t=3033")
+
+    found = extract_references("clip https://youtu.be/qCbfTN-caFI?t=48m24s")
+    kinds = {r["kind"] for r in found}
+    assert "youtube_video" in kinds
+    vid = next(r for r in found if r["kind"] == "youtube_video")
+    assert vid["t"] == 48 * 60 + 24
+
+    atom = {
+        "text": "A good conversation requires duration.",
+        "refs": [
+            {
+                "kind": "youtube_video",
+                "youtube_video_id": "qCbfTN-caFI",
+                "t": 3033,
+                "url": "https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033",
+            }
+        ],
+    }
+    refs = extract_content_refs([atom])
+    assert refs[0]["youtube_video_id"] == "qCbfTN-caFI"
+    assert refs[0]["t"] == 3033
