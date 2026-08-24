@@ -1218,7 +1218,7 @@ def cmd_find(args):
             continue
         score = inter / (len(q) ** 0.5)
         ranked.append((score, inter, t))
-    ranked.sort(reverse=True)
+    ranked.sort(key=lambda r: (r[0], r[1], r[2]["id"]), reverse=True)
     if not ranked:
         print("No matching topics")
         return
@@ -1240,7 +1240,7 @@ def cmd_cache(args):
             continue
         score = inter / max(len(q) ** 0.5, 1)
         ranked.append((score, inter, t))
-    ranked.sort(reverse=True)
+    ranked.sort(key=lambda r: (r[0], r[1], r[2]["id"]), reverse=True)
     if not ranked:
         print("CACHE MISS — no matching topics.")
         print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')

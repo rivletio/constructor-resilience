@@ -153,6 +153,18 @@ def test_pack_atoms_flags_no_json_file(tmp_path, capsys):
     assert len(store2["atoms"]) == 2
 
 
+def test_cache_tied_scores_do_not_crash(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(root, "pack", "--title", "Alpha theme", "--atom", "Durable packet claim one.")
+    _run(root, "pack", "--title", "Beta theme", "--atom", "Durable packet claim two.")
+    capsys.readouterr()
+    _run(root, "cache", "durable packet claim")
+    out = capsys.readouterr().out
+    assert "CACHE HIT" in out
+    assert "alpha-theme" in out
+    assert "beta-theme" in out
+
+
 def test_cache_miss_points_at_ingest(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(root, "cache", "anything")

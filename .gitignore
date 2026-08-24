@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 .coherence/
+.coherence-research/
 .venv/
 venv/
 *.png
