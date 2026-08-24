@@ -10,7 +10,27 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from .refs_util import extract_references, normalize_ref
+from .refs_util import (
+    extract_references,
+    file_line_url,
+    normalize_ref,
+    parse_timestamp,
+    parse_youtube_url,
+    timestamp_label,
+)
+
+_LOCATOR_KEYS = (
+    "path",
+    "line",
+    "end_line",
+    "url",
+    "t",
+    "t_label",
+    "page",
+    "paragraph",
+    "excerpt",
+    "label",
+)
 
 VALID_CONSTRAINT = frozenset({"possibility", "impossibility", "fact", "decision"})
 VALID_MENTION_KIND = frozenset(
@@ -75,9 +95,66 @@ def normalize_mention(item: Any) -> dict | None:
         kind = "other"
     rec: dict[str, Any] = {"name": name, "kind": kind}
     if isinstance(item, dict):
-        for k in ("id", "aliases"):
+        for k in ("id", "aliases", *_LOCATOR_KEYS):
             if item.get(k) is not None:
                 rec[k] = item[k]
+        rec = _fill_mention_locator(rec)
+    return rec
+
+
+def _fill_mention_locator(rec: dict[str, Any]) -> dict[str, Any]:
+    if rec.get("path") and not rec.get("url"):
+        rec["url"] = file_line_url(rec["path"], rec.get("line"), rec.get("end_line"))
+    if rec.get("path") and rec.get("line") and not rec.get("label"):
+        rec["label"] = f"{rec['path']}:{rec['line']}"
+        if rec.get("end_line") and rec["end_line"] != rec["line"]:
+            rec["label"] += f"-{rec['end_line']}"
+    if rec.get("t") is not None and not rec.get("t_label"):
+        rec["t_label"] = timestamp_label(int(rec["t"]))
+    return rec
+
+
+def parse_at_flag(raw: str) -> dict[str, Any]:
+    """Locator after ``--mention``: ``file.py:42``, ``file.py#L42-L48``, ``t=3033``, or a URL."""
+    text = (raw or "").strip()
+    if not text:
+        return {}
+    yt = parse_youtube_url(text)
+    if yt:
+        out: dict[str, Any] = {"url": yt["url"]}
+        if yt.get("t") is not None:
+            out["t"] = yt["t"]
+            out["t_label"] = yt.get("t_label")
+        return out
+    t_raw = text[2:] if text.lower().startswith("t=") else text
+    if text.lower().startswith("t=") or re.fullmatch(r"\d+:\d{2}(?::\d{2})?", text):
+        t = parse_timestamp(t_raw)
+        if t is not None:
+            return {"t": t, "t_label": timestamp_label(t)}
+    m = re.match(r"(.+?)#L(\d+)(?:-L(\d+))?$", text, re.I)
+    if m:
+        return _file_loc(m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
+    m = re.match(r"(.+):(\d+)(?:-(\d+))?$", text)
+    if m and "://" not in m.group(1):
+        return _file_loc(m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
+    if re.match(r"https?://", text, re.I):
+        return {"url": text}
+    return _file_loc(text, None, None)
+
+
+def _file_loc(path: str, line: int | None, end_line: int | None) -> dict[str, Any]:
+    path = path.strip()
+    rec: dict[str, Any] = {
+        "path": path,
+        "url": file_line_url(path, line, end_line),
+    }
+    if line:
+        rec["line"] = int(line)
+    if end_line:
+        rec["end_line"] = int(end_line)
+    rec["label"] = path + (f":{line}" if line else "")
+    if end_line and line and int(end_line) != int(line):
+        rec["label"] += f"-{end_line}"
     return rec
 
 
@@ -101,7 +178,14 @@ def normalize_mentions(items: Iterable | None) -> list[dict]:
         rec = normalize_mention(item)
         if not rec:
             continue
-        key = (rec["name"].lower(), rec["kind"])
+        key = (
+            rec["name"].lower(),
+            rec["kind"],
+            rec.get("path"),
+            rec.get("line"),
+            rec.get("t"),
+            rec.get("url"),
+        )
         if key in seen:
             continue
         seen.add(key)

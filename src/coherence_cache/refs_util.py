@@ -50,6 +50,16 @@ def youtube_watch_url(video_id: str, t: int | None = None) -> str:
     return url
 
 
+def file_line_url(path: str, line: int | None = None, end_line: int | None = None) -> str:
+    """Clickable file locator. GitHub/GitLab and many editors honor ``#L12`` / ``#L12-L20``."""
+    url = (path or "").strip().replace("\\", "/")
+    if line:
+        url += f"#L{int(line)}"
+        if end_line and int(end_line) != int(line):
+            url += f"-L{int(end_line)}"
+    return url
+
+
 _ARXIV_CORE = r"(\d{4}\.\d{4,5})(?:v\d+)?"
 
 

@@ -32,12 +32,12 @@ Read the packet first. If CACHE MISS, pack (next). Only chase what is not alread
 ```bash
 coherence pack --title "your theme" --constraint fact \
   --atom "Durable claim." \
-  --mention "The Concept:concept" \
+  --mention "The Concept:concept" --at "src/mod.py:12" \
   --atom "Second durable claim." \
-  --mention "A Person:person"
+  --mention "A Person:person" --at "t=3033"
 ```
 
-The packing agent hangs names on the claim (`--mention Name:kind`). That is the extraction — not a second entity graph. Atom JSON shape is in [SPEC.md](../SPEC.md). `pack` keeps claims; MLX `mint` starts pending. Back out anything that does not actually constrain a possibility or impossibility.
+The packing agent hangs names on the claim (`--mention Name:kind`) and pins where they appeared (`--at file.py:42` or `t=3033`). That is the extraction — not a second entity graph. Atom JSON shape is in [SPEC.md](../SPEC.md). `pack` keeps claims; MLX `mint` starts pending. Back out anything that does not actually constrain a possibility or impossibility.
 
 **Handoff.** `pack` already wrote the packet.
 

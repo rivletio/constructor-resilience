@@ -30,7 +30,7 @@ from .atoms import (
     parse_ingest_payload,
     set_review,
 )
-from .mentions import parse_mention_flag
+from .mentions import parse_at_flag, parse_mention_flag
 from .search import token_set
 
 extract_references = _refs_mod.extract_references
@@ -356,7 +356,7 @@ def cmd_add_atom(args):
 
 
 class ClaimParts(argparse.Action):
-    """``--atom`` then ``--mention Name[:kind]`` attach joins to that claim."""
+    """``--atom`` then ``--mention Name[:kind]`` then ``--at`` locator on that join."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         bag = getattr(namespace, "claim_parts", None)
@@ -372,6 +372,13 @@ class ClaimParts(argparse.Action):
             rec = parse_mention_flag(values)
             if rec:
                 bag[-1].setdefault("mentions", []).append(rec)
+            return
+        if option_string == "--at":
+            if not bag or not (bag[-1].get("mentions") or []):
+                parser.error("--at requires a preceding --mention")
+            loc = parse_at_flag(values)
+            if loc:
+                bag[-1]["mentions"][-1].update(loc)
 
 
 def _items_from_args(args) -> list:
@@ -1890,6 +1897,13 @@ def main(argv=None):
         metavar="NAME[:KIND]",
         help="Join on the preceding --atom (concept|person|org|work|place|other)",
     )
+    p_ingest.add_argument(
+        "--at",
+        action=ClaimParts,
+        dest="claim_parts",
+        metavar="LOC",
+        help="Locator on the preceding --mention: file.py:42, file.py#L42-L48, t=3033, or a URL",
+    )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument("--text", help="Inline JSON string")
     p_ingest.add_argument(
@@ -1931,6 +1945,13 @@ def main(argv=None):
         dest="claim_parts",
         metavar="NAME[:KIND]",
         help="Join on the preceding --atom (concept|person|org|work|place|other)",
+    )
+    p_pack.add_argument(
+        "--at",
+        action=ClaimParts,
+        dest="claim_parts",
+        metavar="LOC",
+        help="Locator on the preceding --mention: file.py:42, file.py#L42-L48, t=3033, or a URL",
     )
     p_pack.add_argument("--json", help="Path to claims JSON")
     p_pack.add_argument("--text", help="Inline claims JSON")

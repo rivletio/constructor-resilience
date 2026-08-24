@@ -141,6 +141,47 @@ def test_pack_mention_flag_joins_last_atom(tmp_path, capsys):
     assert not (store["atoms"][1].get("mentions") or [])
 
 
+def test_pack_mention_at_file_line_and_timestamp(tmp_path, capsys):
+    from coherence_cache.mentions import parse_at_flag
+
+    loc = parse_at_flag("src/coherence_cache/cli.py:358")
+    assert loc["path"] == "src/coherence_cache/cli.py"
+    assert loc["line"] == 358
+    assert loc["url"] == "src/coherence_cache/cli.py#L358"
+    span = parse_at_flag("src/foo.py#L10-L12")
+    assert span["line"] == 10 and span["end_line"] == 12
+    assert span["url"].endswith("#L10-L12")
+    ts = parse_at_flag("t=3033")
+    assert ts["t"] == 3033 and ts["t_label"] == "50:33"
+
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Located joins",
+        "--constraint",
+        "fact",
+        "--atom",
+        "ClaimParts attaches joins to the preceding atom.",
+        "--mention",
+        "ClaimParts:concept",
+        "--at",
+        "src/coherence_cache/cli.py:358",
+        "--mention",
+        "Lex Fridman:person",
+        "--at",
+        "https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033",
+    )
+    store = _load(root / "topics" / "located-joins" / "atoms.json")
+    m0, m1 = store["atoms"][0]["mentions"]
+    assert m0["path"] == "src/coherence_cache/cli.py"
+    assert m0["line"] == 358
+    assert m0["url"] == "src/coherence_cache/cli.py#L358"
+    assert m1["t"] == 3033
+    assert "qCbfTN-caFI" in m1["url"] and "t=3033" in m1["url"]
+
+
 def test_cache_ignores_weak_tokens(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(
