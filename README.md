@@ -62,6 +62,8 @@ coherence eval --query "What is JEPA?" --ensure-model
 ```bash
 coherence import ./their-atoms.json --title "Lex public" --use
 coherence intersect my-ai-interests lex-public --query consciousness --max-size 8
+coherence union my-ai-interests lex-public --out /tmp/union.json
+coherence check --packet /tmp/union.json
 ```
 
 ### Library

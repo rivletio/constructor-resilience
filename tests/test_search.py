@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from coherence_cache.intersection import intersection_packet
+from coherence_cache.intersection import intersection_packet, overlap_challenges
 from coherence_cache.search import (
     SAMPLE_METHODS,
     build_qubo,
@@ -183,6 +183,79 @@ def test_intersection_structured_atoms_stay_text():
     doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.05)
     assert doc["atoms"]
     assert all(isinstance(a, str) for a in doc["atoms"])
+    assert doc.get("challenges")
+    assert all(p.get("store_index") is not None for p in doc["provenance"])
+
+
+def test_union_keeps_one_sided_when_intersection_empty():
+    mine = {
+        "atoms": ["Refs are citations extracted from claim text."],
+        "consistency": {},
+    }
+    theirs = {
+        "atoms": ["Interest in consciousness, AI, and the nature of understanding."],
+        "consistency": {},
+    }
+    ix = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.18)
+    assert ix["atoms"] == []
+    assert ix["kind"] == "interest_intersection"
+    assert ix["challenges"] == []
+    uni = intersection_packet(
+        mine, theirs, max_size=4, min_cross_sim=0.18, require_cross=False
+    )
+    assert uni["kind"] == "interest_union"
+    assert len(uni["atoms"]) >= 1
+    sources = {p["source"] for p in uni.get("provenance") or []}
+    assert sources <= {"mine", "theirs"}
+    assert uni["challenges"]
+    assert any(ch.get("other") is None for ch in uni["challenges"])
+
+
+def test_overlap_challenges_pair_cross_surface():
+    from coherence_cache.atoms import make_atom
+
+    mine = {
+        "atoms": [
+            make_atom(
+                "JEPA predicts in latent space rather than tokens.",
+                mentions=[{"name": "JEPA", "kind": "concept"}],
+            )
+        ]
+    }
+    theirs = {
+        "atoms": [
+            make_atom(
+                "V-JEPA extends the same objective to video.",
+                mentions=[{"name": "JEPA", "kind": "concept"}],
+            )
+        ]
+    }
+    doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.18)
+    assert doc["challenges"]
+    paired = [c for c in doc["challenges"] if c.get("other")]
+    assert paired
+    assert all("still hold" in (c.get("prompt") or "") for c in paired)
+    assert all(c.get("affinity", 0) >= 0.18 for c in paired)
+
+
+def test_overlap_challenges_one_sided_without_match():
+    prov = [
+        {
+            "index": 0,
+            "source": "mine",
+            "text": "Domestic cats hunt primarily at dusk and dawn.",
+            "store_index": 0,
+        }
+    ]
+    ch = overlap_challenges(
+        prov,
+        {"atoms": ["Domestic cats hunt primarily at dusk and dawn."]},
+        {"atoms": ["Packets are the share unit, not transcripts."]},
+        min_sim=0.18,
+    )
+    assert len(ch) == 1
+    assert ch[0]["other"] is None
+    assert "without them" in ch[0]["prompt"]
 
 
 def test_qubo_energy_two_spins():

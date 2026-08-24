@@ -37,7 +37,7 @@ coherence pack --title "your theme" --constraint fact \
   --mention "A Person:person" --at "t=3033"
 ```
 
-The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. Atom JSON shape is in [SPEC.md](../SPEC.md).
+The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, then `coherence check --packet`): each challenge asks whether an atom still holds given the other surface. Atom JSON shape is in [SPEC.md](../SPEC.md).
 
 **Handoff.** `pack` already wrote the packet.
 
@@ -49,7 +49,9 @@ coherence share --to alice --audience circle --forward none
 
 ```bash
 coherence import ./their-atoms.json --title "Lex public" --use
-coherence intersect my-ai-interests lex-public --query consciousness
+coherence intersect my-ai-interests lex-public --query consciousness --out /tmp/overlap.json
+coherence union my-ai-interests lex-public --out /tmp/union.json
+coherence check --packet /tmp/overlap.json
 ```
 
 **Optional (Apple Silicon).** `coherence mint` / `critique` / `eval` after `./install.sh --mlx`. Not required.
@@ -65,7 +67,7 @@ coherence intersect my-ai-interests lex-public --query consciousness
 | `pack` `ingest` `add-atom` `check` | Write claims, packet, and mechanical self-eval |
 | `review` `reject`/`backout` `set-review` | Review |
 | `search` `packet` | Compress |
-| `share` `import` `intersect` | Hand off / overlap |
+| `share` `import` `intersect` `union` | Hand off / overlap (∩ or ∪) + belief challenges |
 | `export` | Markdown for Obsidian / Roam |
 
 ## What to store

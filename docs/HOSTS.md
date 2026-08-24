@@ -14,7 +14,7 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 ## SHOULD
 
 1. Support **interest surfaces**: topics tagged with what the user is willing to show.
-2. Support **`intersect`**: recompute overlap when the user changes browse dials.
+2. Support **`intersect` / `union`**: recompute overlap when the user changes browse dials or ∩ vs ∪. Run challenges: does an atom still hold given the other surface?
 3. Project packets to classical web (markdown, RSS item, URL cite) when useful.
 4. Separate **published** (public figures, open projects) from **private** stores.
 
@@ -46,7 +46,7 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 | Inner circle | Private material never auto-atoms into public topics |
 | Interest surface | User-curated topics = “what I’m into” |
 | Public follow | Import/subscribe creator `atoms.json` like a feed |
-| Browse | Live `intersect(my_surface, their_surface, seed?)` |
+| Browse | Live `intersect` / `union` (seed?) + belief challenges |
 | Share | Intentional `share.json` envelope (`coherence share` / `import`) — never ambient |
 
 Formats are the same at every circle. **Hosts enforce policy.**

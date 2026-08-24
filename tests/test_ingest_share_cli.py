@@ -279,6 +279,120 @@ def test_check_fails_missing_mentions_and_retries(tmp_path, capsys):
     # observe/experiment line is printed by format_check on FAIL
 
 
+def test_intersect_union_challenges_and_check_packet(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Mine AI",
+        "--constraint",
+        "fact",
+        "--atom",
+        "JEPA predicts in latent space rather than tokens.",
+        "--mention",
+        "JEPA:concept",
+        "--atom",
+        "Packets are the share unit, not transcripts.",
+        "--mention",
+        "packet:concept",
+    )
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Theirs AI",
+        "--constraint",
+        "fact",
+        "--atom",
+        "V-JEPA extends the same latent objective to video.",
+        "--mention",
+        "JEPA:concept",
+        "--atom",
+        "Public talks explore consciousness and understanding.",
+        "--mention",
+        "consciousness:concept",
+    )
+    overlap = tmp_path / "overlap.json"
+    capsys.readouterr()
+    _run(
+        root,
+        "intersect",
+        "mine-ai",
+        "theirs-ai",
+        "--out",
+        str(overlap),
+        "--min-sim",
+        "0.12",
+    )
+    out = capsys.readouterr().out
+    assert "intersection" in out
+    assert "challenges" in out
+    assert "still hold" in out
+    doc = _load(overlap)
+    assert doc["kind"] == "interest_intersection"
+    assert doc["challenges"]
+    assert any(c.get("other") for c in doc["challenges"])
+
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Cats",
+        "--constraint",
+        "fact",
+        "--atom",
+        "Domestic cats hunt primarily at dusk and dawn.",
+        "--mention",
+        "cat:concept",
+    )
+    empty_p = tmp_path / "empty.json"
+    capsys.readouterr()
+    _run(root, "intersect", "mine-ai", "cats", "--out", str(empty_p))
+    assert _load(empty_p)["atoms"] == []
+    uni_p = tmp_path / "uni.json"
+    capsys.readouterr()
+    _run(root, "union", "mine-ai", "cats", "--out", str(uni_p))
+    uni_out = capsys.readouterr().out
+    assert "union" in uni_out
+    uni = _load(uni_p)
+    assert uni["kind"] == "interest_union"
+    assert len(uni["atoms"]) >= 1
+    assert uni["challenges"]
+    assert any(c.get("other") is None for c in uni["challenges"])
+
+    capsys.readouterr()
+    _run(root, "check", "--packet", str(uni_p))
+    cout = capsys.readouterr().out
+    assert "PASS" in cout
+    assert "interest_union" in cout
+    assert "challenge" in cout.lower()
+
+    # --union flag on intersect is the same verb
+    flag_p = tmp_path / "flag-union.json"
+    capsys.readouterr()
+    _run(
+        root,
+        "intersect",
+        "mine-ai",
+        "cats",
+        "--union",
+        "--out",
+        str(flag_p),
+    )
+    assert _load(flag_p)["kind"] == "interest_union"
+
+    bad = tmp_path / "bad-overlap.json"
+    bad.write_text(
+        json.dumps({"kind": "interest_union", "atoms": ["hi"], "challenges": []}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as exc:
+        _run(root, "check", "--packet", str(bad))
+    assert exc.value.code == 1
+    assert "too short" in capsys.readouterr().out
+
+
 def test_cache_ignores_weak_tokens(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(

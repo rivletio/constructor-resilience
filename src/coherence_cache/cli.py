@@ -1811,7 +1811,8 @@ def cmd_export(args):
 
 
 def cmd_intersect(args):
-    """Interest intersection: my topic ∩ their topic → packet."""
+    """Interest overlap: my topic ∩ or ∪ their topic → packet + challenges."""
+    from .check import format_overlap_check
     from .intersection import intersection_packet
     meta = load_meta()
     def load_topic(tid: str) -> dict:
@@ -1823,6 +1824,7 @@ def cmd_intersect(args):
         if not store:
             raise SystemExit(f"Missing store: {path}")
         return store
+    is_union = bool(getattr(args, "union", False))
     mine = load_topic(args.mine)
     theirs = load_topic(args.theirs)
     doc = intersection_packet(
@@ -1832,15 +1834,17 @@ def cmd_intersect(args):
         min_cross_sim=args.min_sim,
         seed_query=args.query,
         redundancy_scale=args.redundancy_scale,
-        require_cross=not args.allow_one_sided,
+        require_cross=not (is_union or args.allow_one_sided),
+        kind="interest_union" if is_union else "interest_intersection",
     )
     out = args.out
     if out:
         outp = Path(out)
         save_json(outp, doc)
         print(f"wrote {outp}")
+    label = "union" if is_union else "intersection"
     print(
-        f"intersection  E={doc.get('energy')}  size={len(doc.get('atoms') or [])}  "
+        f"{label}  E={doc.get('energy')}  size={len(doc.get('atoms') or [])}  "
         f"mine={doc.get('n_mine')} theirs={doc.get('n_theirs')}"
     )
     for i, a in enumerate(doc.get("atoms") or []):
@@ -1850,11 +1854,32 @@ def cmd_intersect(args):
                 src = p.get("source", "?")
                 break
         print(f"  [{i}] ({src}) {a}")
+    print(format_overlap_check(doc))
 
 
-def cmd_check(_args):
-    """Mechanical self-eval of the active topic (small-model retry loop)."""
-    from .check import check_store, format_check
+def cmd_check(args):
+    """Mechanical self-eval of the active topic, or an overlap packet."""
+    from .check import (
+        check_store,
+        format_check,
+        format_overlap_check,
+        overlap_fail_count,
+    )
+
+    packet_arg = getattr(args, "packet", None)
+    if packet_arg is not None:
+        if packet_arg:
+            path = Path(packet_arg)
+        else:
+            active, atoms_path, _store = load_active_store()
+            path = Path(active.get("atoms_path") or atoms_path).parent / "packet.json"
+        doc = load_json(path)
+        if not doc:
+            raise SystemExit(f"Missing packet: {path}")
+        print(format_overlap_check(doc))
+        if overlap_fail_count(doc):
+            raise SystemExit(1)
+        return
 
     _active, _path, store = load_active_store()
     print(format_check(store))
@@ -1891,10 +1916,18 @@ def main(argv=None):
     p_create.set_defaults(func=cmd_create)
 
     sub.add_parser("path", help="Print active atoms.json path").set_defaults(func=cmd_path)
-    sub.add_parser(
+    p_check = sub.add_parser(
         "check",
-        help="Self-eval active atoms (FAIL → reject and pack again)",
-    ).set_defaults(func=cmd_check)
+        help="Self-eval active atoms or an overlap packet (FAIL → retry loop)",
+    )
+    p_check.add_argument(
+        "--packet",
+        nargs="?",
+        const="",
+        default=None,
+        help="Packet JSON (omit path = active topic packet.json)",
+    )
+    p_check.set_defaults(func=cmd_check)
 
     p_render = sub.add_parser("render", help="Render active topic graph PNG")
     p_render.set_defaults(func=cmd_render)
@@ -2259,19 +2292,39 @@ def main(argv=None):
 
 
     
+    def _overlap_flags(p, *, union_default: bool = False):
+        p.add_argument("mine", help="My topic id (interest surface)")
+        p.add_argument("theirs", help="Their topic id (public or shared surface)")
+        p.add_argument("--max-size", type=int, default=8)
+        p.add_argument(
+            "--min-sim",
+            type=float,
+            default=0.18,
+            help="Min cross-surface lexical affinity",
+        )
+        p.add_argument("--query", default=None, help="Optional seed query to reweight browse")
+        p.add_argument("--redundancy-scale", type=float, default=2.0)
+        p.add_argument("--allow-one-sided", action="store_true")
+        p.add_argument("--out", default=None, help="Write overlap packet JSON")
+        if not union_default:
+            p.add_argument(
+                "--union",
+                action="store_true",
+                help="Union pool (not cross-only intersection)",
+            )
+        p.set_defaults(func=cmd_intersect, union=union_default)
+
     p_ix = sub.add_parser(
         "intersect",
         help="Overlap packet: my topic ∩ their topic",
     )
-    p_ix.add_argument("mine", help="My topic id (interest surface)")
-    p_ix.add_argument("theirs", help="Their topic id (public or shared surface)")
-    p_ix.add_argument("--max-size", type=int, default=8)
-    p_ix.add_argument("--min-sim", type=float, default=0.18, help="Min cross-surface lexical affinity")
-    p_ix.add_argument("--query", default=None, help="Optional seed query to reweight browse")
-    p_ix.add_argument("--redundancy-scale", type=float, default=2.0)
-    p_ix.add_argument("--allow-one-sided", action="store_true")
-    p_ix.add_argument("--out", default=None, help="Write intersection packet JSON")
-    p_ix.set_defaults(func=cmd_intersect)
+    _overlap_flags(p_ix, union_default=False)
+
+    p_un = sub.add_parser(
+        "union",
+        help="Overlap packet: my topic ∪ their topic",
+    )
+    _overlap_flags(p_un, union_default=True)
 
     p_export = sub.add_parser("export", help="Export topic to Obsidian/Roam markdown")
     p_export.add_argument("--topic", default=None, help="Topic id (default: active)")

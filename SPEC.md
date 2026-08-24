@@ -136,9 +136,9 @@ Energy model: coverage + support − redundancy (see `docs/qubo-formulation.md`)
 
 ---
 
-## Interest intersection packet
+## Interest overlap packet
 
-Output of `intersect mine theirs` — **browse primitive**.
+Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **browse primitive**.
 
 ```json
 {
@@ -151,16 +151,31 @@ Output of `intersect mine theirs` — **browse primitive**.
   "atoms": ["…"],
   "atom_indices": [0, 5, 7],
   "provenance": [
-    { "index": 0, "source": "mine", "text": "…" },
-    { "index": 5, "source": "theirs", "text": "…" }
+    { "index": 0, "source": "mine", "text": "…", "store_index": 0 },
+    { "index": 5, "source": "theirs", "text": "…", "store_index": 2 }
+  ],
+  "challenges": [
+    {
+      "source": "mine",
+      "store_index": 0,
+      "text": "…",
+      "other_source": "theirs",
+      "other": "…",
+      "other_store_index": 2,
+      "affinity": 0.71,
+      "prompt": "Does this atom still hold given the other side?"
+    }
   ],
   "n_mine": 10,
   "n_theirs": 14,
-  "atom_count_source": 24
+  "atom_count_source": 24,
+  "require_cross": true
 }
 ```
 
-Hosts SHOULD re-run intersect when the user changes topic dials, seed query, or max size (**realtime browse**).
+`kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` asks whether that atom still holds without the other surface.
+
+Hosts SHOULD re-run overlap when the user changes topic dials, seed query, max size, or ∩ vs ∪ (**realtime browse**). Hosts SHOULD run the observe–reason–experiment loop on the challenges: does mine still hold given theirs (and vice versa)?
 
 Cross-surface edges use lexical/stem overlap and shared mention names. Internal consistency is damped. If `require_cross` (default) and there are no cross-edges, the packet is empty — no filling from dense hubs on one side.
 

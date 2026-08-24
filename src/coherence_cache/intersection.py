@@ -1,8 +1,9 @@
-"""Interest-surface intersection: what we share when we don't share everything.
+"""Interest-surface overlap: intersection or union, plus belief challenges.
 
 Given two topical stores (or pre-built packets), produce a resilient packet
-over the *union candidate pool* weighted toward mutual support — the live
-"browse overlap with Lex" primitive.
+over the union candidate pool. Intersection keeps only cross-linked atoms;
+union keeps one-sided atoms too. Each selected atom is challenged against
+the other surface: does it still hold given what they claimed?
 
 This is host-agnostic. Hosts map surfaces to circle policy; this module
 only computes the overlap packet.
@@ -90,13 +91,65 @@ def align_cross_atoms(
     return links
 
 
+def overlap_challenges(
+    provenance: Sequence[dict],
+    my_store: dict,
+    their_store: dict,
+    *,
+    min_sim: float = 0.18,
+) -> List[dict]:
+    """One belief-challenge per selected atom against the other full surface."""
+    mine_raw = list(my_store.get("atoms") or [])
+    theirs_raw = list(their_store.get("atoms") or [])
+    out: List[dict] = []
+    for p in provenance:
+        text = as_text(p.get("text"))
+        src = p.get("source")
+        if src == "mine":
+            others, other_src = theirs_raw, "theirs"
+        elif src == "theirs":
+            others, other_src = mine_raw, "mine"
+        else:
+            continue
+        best_text = None
+        best_s = 0.0
+        best_j = None
+        for j, o in enumerate(others):
+            s = cross_affinity(text, o)
+            if s > best_s:
+                best_s = s
+                best_text = as_text(o)
+                best_j = j
+        rec = {
+            "source": src,
+            "store_index": p.get("store_index"),
+            "text": text,
+            "other_source": other_src,
+        }
+        if best_text is not None and best_s >= min_sim:
+            rec["other"] = best_text
+            rec["other_store_index"] = best_j
+            rec["affinity"] = round(float(best_s), 3)
+            rec["prompt"] = "Does this atom still hold given the other side?"
+        else:
+            rec["other"] = None
+            rec["other_store_index"] = None
+            rec["affinity"] = 0.0
+            rec["prompt"] = (
+                "No counterpart on the other surface — "
+                "is this still true without them?"
+            )
+        out.append(rec)
+    return out
+
+
 def build_intersection_pool(
     my_store: dict,
     their_store: dict,
     *,
     min_cross_sim: float = 0.18,
     seed_query: Optional[str] = None,
-) -> Tuple[List[str], Dict[Pair, float], List[dict]]:
+) -> Tuple[List[str], Dict[Pair, float], List[dict], int]:
     """
     Build a candidate atom list + consistency map for intersection search.
 
@@ -149,9 +202,18 @@ def build_intersection_pool(
 
     provenance = []
     for i, a in enumerate(mine):
-        provenance.append({"index": i, "source": "mine", "text": a})
+        provenance.append(
+            {"index": i, "source": "mine", "text": a, "store_index": i}
+        )
     for j, b in enumerate(theirs):
-        provenance.append({"index": j + n_mine, "source": "theirs", "text": b})
+        provenance.append(
+            {
+                "index": j + n_mine,
+                "source": "theirs",
+                "text": b,
+                "store_index": j,
+            }
+        )
 
     return pool, cons, provenance, n_mine
 
@@ -165,13 +227,18 @@ def intersection_packet(
     seed_query: Optional[str] = None,
     redundancy_scale: float = 2.0,
     require_cross: bool = True,
+    kind: Optional[str] = None,
 ) -> dict:
     """
     Compute a resilient packet over my ∪ their interest surfaces.
 
     If ``require_cross`` is True, prefer packets that include at least one
     atom from each side when possible (true intersection flavor).
+    Union sets ``require_cross=False`` and ``kind="interest_union"``.
     """
+    kind = kind or (
+        "interest_union" if not require_cross else "interest_intersection"
+    )
     built = build_intersection_pool(
         my_store,
         their_store,
@@ -182,17 +249,29 @@ def intersection_packet(
     n_mine_orig = n_mine
     n_theirs_orig = len(pool) - n_mine
     n_union = len(pool)
-    if not pool:
+
+    def _doc(atoms, energy, indices, prov) -> dict:
         return {
             "version": 1,
-            "kind": "interest_intersection",
-            "atoms": [],
-            "atom_indices": [],
-            "energy": 0.0,
+            "kind": kind,
             "method": "greedy",
+            "energy": float(energy),
             "max_size": max_size,
-            "provenance": [],
+            "seed_query": seed_query,
+            "atom_indices": indices,
+            "atoms": list(atoms),
+            "provenance": prov,
+            "challenges": overlap_challenges(
+                prov, my_store, their_store, min_sim=min_cross_sim
+            ),
+            "atom_count_source": n_union,
+            "n_mine": n_mine_orig,
+            "n_theirs": n_theirs_orig,
+            "require_cross": require_cross,
         }
+
+    if not pool:
+        return _doc([], 0.0, [], [])
 
     if require_cross and n_mine > 0 and len(pool) > n_mine:
         linked: set[int] = set()
@@ -278,17 +357,4 @@ def intersection_packet(
         p = provenance[i] if i < len(provenance) else {"index": i, "source": "?", "text": s}
         indices.append(int(p.get("index", i)))
         prov_sel.append(p)
-    return {
-        "version": 1,
-        "kind": "interest_intersection",
-        "method": "greedy",
-        "energy": float(eng),
-        "max_size": max_size,
-        "seed_query": seed_query,
-        "atom_indices": indices,
-        "atoms": list(selected),
-        "provenance": prov_sel,
-        "atom_count_source": n_union,
-        "n_mine": n_mine_orig,
-        "n_theirs": n_theirs_orig,
-    }
+    return _doc(selected, eng, indices, prov_sel)

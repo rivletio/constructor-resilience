@@ -21,12 +21,9 @@ _TEMPLATE = re.compile(
 )
 
 
-def check_atom(atom: Any) -> list[str]:
-    """Fail reasons (empty = pass). Rejected atoms are skipped."""
-    if atom_review_status(atom) == REVIEW_REJECTED:
-        return []
+def check_text(text: str) -> list[str]:
+    """Text-only FAILs (overlap packets are strings, not store records)."""
     fails: list[str] = []
-    text = atom_text(atom)
     if len(text) < 24:
         fails.append("too short")
     if _CHAT.search(text or ""):
@@ -35,6 +32,15 @@ def check_atom(atom: Any) -> list[str]:
         fails.append("copied template, not a session claim")
     if len(text) >= 2 and text[0] == text[-1] == '"':
         fails.append("quoted fragment, not a claim")
+    return fails
+
+
+def check_atom(atom: Any) -> list[str]:
+    """Fail reasons (empty = pass). Rejected atoms are skipped."""
+    if atom_review_status(atom) == REVIEW_REJECTED:
+        return []
+    text = atom_text(atom)
+    fails = check_text(text)
     rec = atom if isinstance(atom, dict) else {}
     if not rec.get("constraint"):
         fails.append("missing constraint")
@@ -88,4 +94,60 @@ def format_check(store: dict) -> str:
             f"experiment: coherence reject {idx} --reason \"check fail\" "
             "then pack one replacement"
         )
+    return "\n".join(lines)
+
+
+def overlap_fail_count(doc: dict) -> int:
+    n = 0
+    for a in doc.get("atoms") or []:
+        if check_text(atom_text(a)):
+            n += 1
+    return n
+
+
+def format_overlap_check(doc: dict) -> str:
+    """Observe/reason/experiment for intersect or union packets."""
+    atoms = doc.get("atoms") or []
+    kind = doc.get("kind") or "packet"
+    failed_idx: list[int] = []
+    fail_lines: list[str] = []
+    for i, a in enumerate(atoms):
+        fails = check_text(atom_text(a))
+        if fails:
+            failed_idx.append(i)
+            fail_lines.append(f"  [{i}] FAIL {' | '.join(fails)}")
+    n = len(atoms)
+    n_fail = len(failed_idx)
+    lines = [f"check {n - n_fail}/{n} PASS  {kind}"]
+    lines.extend(fail_lines)
+    challenges = doc.get("challenges") or []
+    if challenges:
+        lines.append("challenges")
+        for i, ch in enumerate(challenges):
+            src = ch.get("source", "?")
+            si = ch.get("store_index")
+            src_l = f"{src}" + (f" #{si}" if si is not None else "")
+            text = ch.get("text") or ""
+            other = ch.get("other")
+            prompt = ch.get("prompt") or ""
+            lines.append(f"  [{i}] ({src_l}) {text}")
+            if other:
+                osrc = ch.get("other_source", "?")
+                aff = ch.get("affinity", 0)
+                lines.append(f"      vs ({osrc}) {other}  affinity={aff}")
+            lines.append(f"      {prompt}")
+    if failed_idx:
+        idx = failed_idx[0]
+        lines.append(
+            f"observe: FAIL [{idx}]; "
+            "experiment: reject the originating atom then re-run intersect/union"
+        )
+    elif challenges:
+        lines.append(
+            "observe: challenge each pair; "
+            "reason: does this still hold given the other side?; "
+            "experiment: reject the falsified atom (`use` its topic) then re-run"
+        )
+    elif n == 0:
+        lines.append("observe: empty overlap; nothing to challenge")
     return "\n".join(lines)
