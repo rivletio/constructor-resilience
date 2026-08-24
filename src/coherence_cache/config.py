@@ -35,6 +35,10 @@ class CoherenceConfig:
     mint_max_tokens: int = 1200
     mint_min_grounding: float = 0.55
     mint_max_atoms: int = 12
+    mint_min_atoms: int = 3
+    mint_max_attempts: int = 3
+    mint_max_drop_frac: float = 0.5
+    mint_min_source_cov: float = 0.45
     critique_temp: float = 0.05
     critique_max_tokens: int = 1500
     critique_accept_min_conf: float = 0.80
@@ -65,6 +69,16 @@ class CoherenceConfig:
                 "COHERENCE_MINT_MIN_GROUNDING", cls.mint_min_grounding
             ),
             mint_max_atoms=_env_int("COHERENCE_MINT_MAX_ATOMS", cls.mint_max_atoms),
+            mint_min_atoms=_env_int("COHERENCE_MINT_MIN_ATOMS", cls.mint_min_atoms),
+            mint_max_attempts=_env_int(
+                "COHERENCE_MINT_MAX_ATTEMPTS", cls.mint_max_attempts
+            ),
+            mint_max_drop_frac=_env_float(
+                "COHERENCE_MINT_MAX_DROP_FRAC", cls.mint_max_drop_frac
+            ),
+            mint_min_source_cov=_env_float(
+                "COHERENCE_MINT_MIN_SOURCE_COV", cls.mint_min_source_cov
+            ),
             critique_temp=_env_float("COHERENCE_CRITIQUE_TEMP", cls.critique_temp),
             critique_max_tokens=_env_int(
                 "COHERENCE_CRITIQUE_MAX_TOKENS", cls.critique_max_tokens

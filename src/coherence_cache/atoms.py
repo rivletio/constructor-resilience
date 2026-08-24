@@ -10,6 +10,7 @@ Indices stay stable for consistency edges. Search/packet always operate on
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -363,6 +364,33 @@ def query_overlap(query: str, claim: str) -> float:
     return len(q & c) / len(q)
 
 
+def _unwrap_mint_item(item: Any) -> str | None:
+    """Small models wrap claims as {atom,text} objects or JSON strings."""
+    if isinstance(item, dict):
+        cands = []
+        for k in ("text", "atom", "claim"):
+            val = item.get(k)
+            if isinstance(val, str) and val.strip() and not val.strip().startswith("{"):
+                cands.append(val.strip())
+        if not cands:
+            return None
+        best = max(cands, key=len)
+        if len(best) < 24:
+            return None
+        return re.sub(r"\s+", " ", best)
+    if isinstance(item, str) and item.strip():
+        s = item.strip()
+        if s.startswith("{") or s.startswith("["):
+            if not s.endswith(("}", "]")):
+                return None
+            try:
+                return _unwrap_mint_item(json.loads(s))
+            except json.JSONDecodeError:
+                return None
+        return re.sub(r"\s+", " ", s)
+    return None
+
+
 def parse_minted_list(raw: str) -> list[str]:
     """Parse model output into atom strings (JSON array or line bullets)."""
     raw = (raw or "").strip()
@@ -373,24 +401,25 @@ def parse_minted_list(raw: str) -> list[str]:
     start = raw.find("[")
     end = raw.rfind("]")
     if start >= 0 and end > start:
-        import json
-
         try:
             data = json.loads(raw[start : end + 1])
             if isinstance(data, list):
                 out = []
                 for item in data:
-                    if isinstance(item, str) and item.strip():
-                        out.append(re.sub(r"\s+", " ", item.strip()))
-                    elif isinstance(item, dict) and item.get("text"):
-                        out.append(re.sub(r"\s+", " ", str(item["text"]).strip()))
-                return out
+                    got = _unwrap_mint_item(item)
+                    if got:
+                        out.append(got)
+                if out:
+                    return out
         except json.JSONDecodeError:
             pass
-    # Fallback: lines
+    # Fallback: lines (and JSON objects the small model emitted one-per-line)
     out = []
     for line in raw.splitlines():
         line = line.strip().lstrip("-•*0123456789.) ").strip()
-        if len(line) >= 12 and not line.lower().startswith(("here", "sure", "json")):
-            out.append(re.sub(r"\s+", " ", line))
+        if len(line) < 12 or line.lower().startswith(("here", "sure", "json")):
+            continue
+        got = _unwrap_mint_item(line)
+        if got:
+            out.append(got)
     return out

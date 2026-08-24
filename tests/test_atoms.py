@@ -54,6 +54,31 @@ def test_parse_minted_json():
     assert "Alpha" in got[0]
 
 
+def test_parse_minted_unwraps_json_string_objects():
+    raw = (
+        '[{"atom": "LLM APIs never run in the guest VM.", "text": "Ikonic OS law"},'
+        ' "{\\"atom\\": \\"Pack does not require a mint model.\\", '
+        '\\"text\\": \\"Pack does not require a mint model.\\"}"]'
+    )
+    got = parse_minted_list(raw)
+    assert any("guest VM" in t for t in got)
+    assert any("mint model" in t for t in got)
+    assert not any(t.startswith("{") for t in got)
+
+
+def test_parse_minted_unwraps_one_object_per_line():
+    raw = (
+        '{"atom": "LLM APIs never run in the guest VM.", "text": "Ikonic OS law"}\n'
+        '{"atom": "Pack does not require a mint model.", '
+        '"text": "Pack does not require a mint model."}\n'
+    )
+    got = parse_minted_list(raw)
+    assert got == [
+        "LLM APIs never run in the guest VM.",
+        "Pack does not require a mint model.",
+    ]
+
+
 def test_back_out_accepted_atom_keeps_text_and_records_why():
     """An accepted atom that failed its possibility/impossibility claim can be retracted."""
     claim = "Perpetual motion of the second kind is possible in a closed cycle."
