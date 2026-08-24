@@ -22,6 +22,18 @@ You browse the **intersection** of your surface with a friend’s — or a publi
 
 ## Install
 
+**As an agent skill** (Claude, Grok, Codex, Cursor):
+
+```bash
+npx skills add rivletio/constructor-resilience-skill
+```
+
+Or clone and run `./install.sh` from [`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) — that links the skill and puts `coherence` on PATH. First `bin/coherence` bootstraps the CLI if it is missing.
+
+Then tell the agent: *pack this session* / *digest this into claims*.
+
+**Python package:**
+
 ```bash
 cd constructor-resilience
 pip install -e ".[dev]"
@@ -36,9 +48,17 @@ export COHERENCE_ROOT=./.coherence   # or pass --root
 coherence status                     # creates empty meta-store on first run
 coherence create --title "My AI interests" --use
 coherence add-atom "I care about world models and non-generative prediction." --auto-score --accepted
-coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score --accepted
+coherence add-atom "JEPA predicts in latent space rather than tokens." --constraint possibility --auto-score --accepted
 coherence search --greedy --max-size 6
 coherence packet
+coherence share --to alice --audience circle   # → topics/<id>/share.json
+```
+
+Host-model mint (the default agent path — no MLX):
+
+```bash
+coherence ingest --json ./claims.json --title "World models" --auto-score
+# claims.json: {"atoms": [{"text": "…", "constraint": "fact", "mentions": [{"name": "JEPA", "kind": "concept"}]}]}
 ```
 
 ### Mint → review → eval (local MLX)
@@ -110,10 +130,9 @@ See [docs/qubo-formulation.md](./docs/qubo-formulation.md) for the energy model.
 | Host | Role |
 |------|------|
 | **CLI** | Reference |
-| **Agent skill** | Claude, Grok, Codex, Cursor — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) (`hosts/grok-skill/` is a pointer) |
-| **Vault / personal computer** | `{VAULT_ROOT}/coherence/` — same packets (`hosts/vault/`) |
+| **Agent skill** | Claude, Grok, Codex, Cursor — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) (`npx skills add` or `./install.sh`). `hosts/grok-skill/` is a pointer. |
 
-Other products can speak the same packets. A vault-style host is a compatible adapter, not a fork.
+Other products can speak the same packets. Circle policy belongs to the host.
 
 ## License
 

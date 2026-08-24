@@ -26,11 +26,18 @@ from typing import Dict, List, Optional, Sequence, Tuple
 Pair = Tuple[int, int]
 
 
-def token_set(s: str) -> set:
-    return set(re.findall(r"[a-z0-9]+", s.lower()))
+def as_text(atom) -> str:
+    """Claims may be strings or {text: ...} records."""
+    if isinstance(atom, dict):
+        return str(atom.get("text") or "").strip()
+    return str(atom).strip()
 
 
-def lexical_similarity(a: str, b: str) -> float:
+def token_set(s) -> set:
+    return set(re.findall(r"[a-z0-9]+", as_text(s).lower()))
+
+
+def lexical_similarity(a, b) -> float:
     ta, tb = token_set(a), token_set(b)
     if not ta or not tb:
         return 0.0
@@ -198,11 +205,12 @@ def find_resilient_constructors(
     runs = simulated_annealing(n, Q, num_reads=num_reads, num_sweeps=num_sweeps, seed=seed)
     unique: List[Tuple[List[str], float]] = []
     seen = set()
+    texts = [as_text(a) for a in atoms]
     for bits, eng in runs:
         key = tuple(i for i, v in enumerate(bits) if v == 1)
         if key not in seen:
             seen.add(key)
-            unique.append(([atoms[i] for i in key], float(eng)))
+            unique.append(([texts[i] for i in key], float(eng)))
     return unique
 
 
@@ -247,7 +255,8 @@ def greedy_resilient(
             break
         selected.add(best_k)
         best_e += best_delta
-    chosen = [atoms[i] for i in sorted(selected)]
+    texts = [as_text(a) for a in atoms]
+    chosen = [texts[i] for i in sorted(selected)]
     return chosen, float(best_e)
 
 

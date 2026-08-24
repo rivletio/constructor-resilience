@@ -77,6 +77,49 @@ def test_back_out_requires_reason():
         back_out(atom, reason="  ")
 
 
+def test_make_atom_constraint_mentions_refs():
+    a = make_atom(
+        "JEPA predicts in latent space rather than tokens. See https://arxiv.org/abs/2206.14607",
+        constraint="possibility",
+    )
+    assert a["constraint"] == "possibility"
+    names = {m["name"] for m in a.get("mentions") or []}
+    assert "JEPA" in names
+    noisy = make_atom("The skill is a thin client of the coherence CLI; PATH may be empty.")
+    noisy_names = {m["name"] for m in noisy.get("mentions") or []}
+    assert "CLI" not in noisy_names
+    assert "PATH" not in noisy_names
+    kinds = {r["kind"] for r in a.get("refs") or []}
+    assert "url" in kinds or "arxiv" in kinds
+
+
+def test_make_atom_rejects_bad_constraint():
+    with pytest.raises(ValueError, match="constraint"):
+        make_atom("A durable claim about packets.", constraint="vibes")
+
+
+def test_coerce_and_parse_ingest_payload():
+    from coherence_cache.atoms import coerce_atom, parse_ingest_payload
+
+    items = parse_ingest_payload(
+        {
+            "atoms": [
+                "Packets are the share unit, not transcripts.",
+                {
+                    "text": "Mentions are joins onto a claim, not a second graph.",
+                    "constraint": "fact",
+                    "mentions": [{"name": "constructor-resilience", "kind": "work"}],
+                },
+            ]
+        }
+    )
+    assert len(items) == 2
+    a = coerce_atom(items[1], method="host_mint")
+    assert a["constraint"] == "fact"
+    assert a["mentions"][0]["name"] == "constructor-resilience"
+    assert a["review"]["status"] == "pending"
+
+
 def test_back_out_does_not_shift_store_indices():
     store = {
         "atoms": [

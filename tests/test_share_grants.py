@@ -45,6 +45,24 @@ def test_forwardable_allows_circle_hop_no_escalate():
     assert "public" in reason_pub
 
 
+def test_receive_does_not_prefix_claim_text():
+    from coherence_cache.share import make_share, receive_as_topic_store
+
+    s = make_share(
+        from_id="dan",
+        to_id="alice",
+        atoms=["Packets are the share unit, not transcripts."],
+        audience="circle",
+        forward="none",
+    )
+    store = receive_as_topic_store(s, receiver_id="alice")
+    assert store["atoms"]
+    text = store["atoms"][0]["text"] if isinstance(store["atoms"][0], dict) else store["atoms"][0]
+    assert text.startswith("Packets are the share unit")
+    assert "[from:" not in text
+    assert store["share"]["from"] == "dan"
+
+
 def test_content_refs_extracted():
     s = make_share(
         from_id="dan",

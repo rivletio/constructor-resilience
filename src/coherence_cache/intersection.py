@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .search import greedy_resilient, lexical_similarity
+from .search import as_text, greedy_resilient, lexical_similarity
 
 Pair = Tuple[int, int]
 
@@ -65,8 +65,8 @@ def build_intersection_pool(
 
     Cross edges use lexical alignment (and optional seed boost).
     """
-    mine = list(my_store.get("atoms") or [])
-    theirs = list(their_store.get("atoms") or [])
+    mine = [as_text(a) for a in (my_store.get("atoms") or [])]
+    theirs = [as_text(a) for a in (their_store.get("atoms") or [])]
     pool: List[str] = mine + theirs
     n_mine = len(mine)
     cons: Dict[Pair, float] = {}

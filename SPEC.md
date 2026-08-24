@@ -4,7 +4,7 @@ Version **1**. Hosts MUST accept these shapes. Extra fields are allowed and igno
 
 ## Philosophy
 
-We do not share **everything**. We share **interest surfaces** — intentional sets of durable claims (*atoms*) — and compute **intersections** so two people (or a person and a public figure) can browse overlap without vault dumps.
+We do not share **everything**. We share **interest surfaces** — intentional sets of durable claims (*atoms*) — and compute **intersections** so two people (or a person and a public figure) can browse overlap without dumping whole stores.
 
 Classical web compatibility: an atom MAY cite a URL; hosts MAY project packets to markdown/RSS. The **source of truth for meaning** is the atom graph + packet, not the HTML page.
 
@@ -64,6 +64,9 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
     "Durable claim one.",
     {
       "text": "Durable claim two with optional https://example.com/ref",
+      "constraint": "fact",
+      "mentions": [{"name": "Example Corp", "kind": "org"}],
+      "refs": [{"kind": "url", "id": "https://example.com/ref", "url": "https://example.com/ref"}],
       "provenance": {
         "method": "mlx_mint",
         "model": "mlx-community/Qwen3-8B-4bit",
@@ -90,10 +93,15 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 |-------|------|
 | `atoms` | Ordered list of **strings or objects**; index is stable for edges |
 | `atoms[].text` | When object: the claim string (search/packet use this) |
+| `atoms[].constraint` | Optional constructor kind: `possibility` \| `impossibility` \| `fact` \| `decision` |
+| `atoms[].mentions` | Optional joins: `[{name, kind}]` where kind is `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. **Not** a second graph. |
+| `atoms[].refs` | Optional citations: arXiv / DOI / URL objects (see `refs_util`) |
 | `atoms[].provenance` | **HOW it was made** — method, model, source, excerpt (required for mint) |
 | `atoms[].review.status` | `pending` \| `accepted` \| `edited` \| `rejected` |
 | `consistency` | Keys `"i,j"` with `i < j`; scores in **[-1, 1]** |
 | Sparse edges | Omit near-zero; prefer judgment over pure keywords |
+
+**Mentions law:** a mention is a *join* from a claim to a named thing. Hosts MAY project mentions into their own entity store. This format does not merge entities and atoms.
 
 **Atom quality law:** only claims worth carrying forward — not ambient chat, not fixture junk.
 
@@ -153,6 +161,39 @@ Output of `intersect mine theirs` — **browse primitive**.
 ```
 
 Hosts SHOULD re-run intersect when the user changes topic dials, seed query, or max size (**realtime browse**).
+
+---
+
+## `intentional_share` (share envelope)
+
+Output of `coherence share`. Wraps a packet with audience + forward grants. Share is never ambient.
+
+```json
+{
+  "version": 1,
+  "kind": "intentional_share",
+  "share_id": "…uuid…",
+  "from": "local",
+  "to": "alice",
+  "audience": "circle",
+  "forward": "none",
+  "shared_at": "2026-08-23T00:00:00Z",
+  "note": "",
+  "topic_id": "demo-interest",
+  "atoms": ["…packet texts…"],
+  "mentions": [{"name": "JEPA", "kind": "concept"}],
+  "content_refs": [{"kind": "url", "url": "https://…"}],
+  "packet": { "atom_indices": [0, 3, 5], "method": "greedy" }
+}
+```
+
+| Field | Rule |
+|-------|------|
+| `audience` | `direct` \| `circle` \| `public` |
+| `forward` | `none` \| `circle` \| `public` — **never escalates** past audience |
+| `atoms` | Packet texts (strings) |
+| `mentions` / `content_refs` | Joins + citations copied from the packet |
+| Import | `coherence import share.json` materializes a topic; claim text stays clean; grant metadata lives on `store.share` |
 
 ---
 

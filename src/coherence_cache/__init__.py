@@ -9,7 +9,7 @@ from .search import (
     redundancy_map,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 __all__ = [
     "build_qubo",
     "energy",

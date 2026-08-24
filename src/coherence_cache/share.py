@@ -46,7 +46,11 @@ def make_share(
         elif audience == "circle" and forward == "public":
             forward = "circle"
 
-    return {
+    from .mentions import mentions_from_atoms
+    from .search import as_text
+
+    texts = [as_text(a) for a in atoms]
+    doc = {
         "version": 1,
         "kind": "intentional_share",
         "share_id": str(uuid.uuid4()),
@@ -57,10 +61,12 @@ def make_share(
         "shared_at": now_iso(),
         "note": note,
         "topic_id": topic_id,
-        "atoms": list(atoms),
-        "content_refs": content_refs or extract_content_refs(atoms),
-        "provenance": [{"source": from_id, "text": a} for a in atoms],
+        "atoms": texts,
+        "content_refs": content_refs or extract_content_refs(texts),
+        "mentions": mentions_from_atoms(atoms),
+        "provenance": [{"source": from_id, "text": t} for t in texts],
     }
+    return doc
 
 
 def extract_content_refs(atoms: List[str]) -> List[Dict[str, Any]]:
@@ -145,14 +151,27 @@ def re_share(
 
 
 def receive_as_topic_store(share: dict, *, receiver_id: str) -> dict:
-    """Materialize a received share as an atoms store (circle copy-in)."""
+    """Materialize a received share as an atoms store (circle copy-in).
+
+    Claim text stays clean. Grant metadata lives on ``store.share``.
+    """
+    from .atoms import atom_text, make_atom
+
     atoms = []
     for a in share.get("atoms") or []:
-        prefix = f"[from:{share.get('from')}|fwd={share.get('forward')}|aud={share.get('audience')}] "
-        if not a.startswith("[from:"):
-            atoms.append(prefix + a)
-        else:
-            atoms.append(a)
+        text = atom_text(a)
+        if not text:
+            continue
+        rec = make_atom(
+            text,
+            method="received",
+            source=str(share.get("from") or ""),
+            review_status="accepted",
+            mentions=a.get("mentions") if isinstance(a, dict) else None,
+            refs=a.get("refs") if isinstance(a, dict) else None,
+            constraint=a.get("constraint") if isinstance(a, dict) else None,
+        )
+        atoms.append(rec)
     cons = {f"{i},{i+1}": 0.55 for i in range(max(0, len(atoms) - 1))}
     return {
         "version": 1,
@@ -170,5 +189,6 @@ def receive_as_topic_store(share: dict, *, receiver_id: str) -> dict:
             "forward": share.get("forward"),
             "parent_share_id": share.get("parent_share_id"),
             "content_refs": share.get("content_refs") or [],
+            "mentions": share.get("mentions") or [],
         },
     }

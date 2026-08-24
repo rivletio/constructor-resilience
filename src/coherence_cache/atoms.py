@@ -72,7 +72,17 @@ def make_atom(
     prompt: str | None = None,
     review_status: str = REVIEW_PENDING,
     extra: dict | None = None,
+    constraint: str | None = None,
+    mentions: list | None = None,
+    refs: list | None = None,
 ) -> dict:
+    from .mentions import (
+        extract_mentions,
+        normalize_constraint,
+        normalize_mentions,
+        refs_for_text,
+    )
+
     text = re.sub(r"\s+", " ", (text or "").strip())
     if not text:
         raise ValueError("empty atom text")
@@ -96,9 +106,77 @@ def make_atom(
             "notes": "",
         },
     }
+    c = normalize_constraint(constraint)
+    if c:
+        rec["constraint"] = c
+    mention_list = (
+        normalize_mentions(mentions) if mentions is not None else extract_mentions(text)
+    )
+    if mention_list:
+        rec["mentions"] = mention_list
+    ref_list = refs_for_text(text, refs)
+    if ref_list:
+        rec["refs"] = ref_list
     if extra:
         rec["extra"] = dict(extra)
     return rec
+
+
+def coerce_atom(
+    item: Any,
+    *,
+    method: str = "ingest",
+    review_status: str = REVIEW_PENDING,
+    source: str | None = None,
+    model: str | None = None,
+) -> dict:
+    """Accept a string or atom object (host-model ingest)."""
+    if isinstance(item, str):
+        return make_atom(
+            item, method=method, review_status=review_status, source=source, model=model
+        )
+    if not isinstance(item, dict):
+        raise ValueError(f"atom must be a string or object, got {type(item).__name__}")
+    text = str(item.get("text") or "").strip()
+    if not text:
+        raise ValueError("atom object missing text")
+    rec = make_atom(
+        text,
+        method=method,
+        review_status=review_status,
+        source=source,
+        model=model,
+        constraint=item.get("constraint"),
+        mentions=item.get("mentions"),
+        refs=item.get("refs") if "refs" in item else None,
+        extra=item.get("extra") if isinstance(item.get("extra"), dict) else None,
+    )
+    if isinstance(item.get("review"), dict):
+        review = dict(rec["review"])
+        review.update(item["review"])
+        st = review.get("status") or rec["review"]["status"]
+        review["status"] = st if st in VALID_REVIEW else rec["review"]["status"]
+        rec["review"] = review
+    if isinstance(item.get("provenance"), dict):
+        prov = dict(rec["provenance"])
+        prov.update({k: v for k, v in item["provenance"].items() if v is not None})
+        rec["provenance"] = prov
+    return rec
+
+
+def parse_ingest_payload(data: Any) -> list:
+    """Normalize ingest JSON to a list of atom items (strings or objects)."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if "atoms" in data:
+            atoms = data.get("atoms") or []
+            if not isinstance(atoms, list):
+                raise ValueError("atoms must be a list")
+            return atoms
+        if data.get("text"):
+            return [data]
+    raise ValueError("ingest JSON must be a list, {atoms: [...]}, or one atom object")
 
 
 def set_review(

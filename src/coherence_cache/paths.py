@@ -4,7 +4,6 @@ Priority:
   1. Explicit ``root`` argument / ``--root`` CLI flag
   2. ``COHERENCE_ROOT`` environment variable
   3. ``./.coherence`` under the current working directory
-  4. Legacy Grok artifact path if it exists (migration only)
 """
 
 from __future__ import annotations
@@ -13,7 +12,6 @@ import os
 from pathlib import Path
 
 _ENV = "COHERENCE_ROOT"
-_LEGACY = Path("/home/workdir/artifacts/knowledge")
 _LOCAL = Path(".coherence")
 
 # Module-level default overridden by CLI before subcommands run.
@@ -46,10 +44,7 @@ def resolve_root(explicit: Path | str | None = None) -> Path:
     env = os.environ.get(_ENV, "").strip()
     if env:
         return Path(env).expanduser().resolve()
-    local = (Path.cwd() / _LOCAL).resolve()
-    if local.is_dir() or not _LEGACY.is_dir():
-        return local
-    return _LEGACY.resolve()
+    return (Path.cwd() / _LOCAL).resolve()
 
 
 def meta_path(root: Path | None = None) -> Path:

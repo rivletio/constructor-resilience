@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "constructor-resilience"
-version = "0.1.1"
+version = "0.1.2"
 description = "Open coherence cache: durable atoms, resilient packets, interest intersection"
 readme = "README.md"
 license = { text = "MIT" }
@@ -34,7 +34,6 @@ all = ["matplotlib>=3.7", "networkx>=3.0", "mlx-lm>=0.22", "pytest>=7.0"]
 
 [project.scripts]
 coherence = "coherence_cache.cli:main"
-knowledge_ops = "coherence_cache.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/rivletio/constructor-resilience"

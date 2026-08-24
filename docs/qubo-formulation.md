@@ -35,7 +35,7 @@ Same QUBO can be handed to hybrid/quantum annealers offline.
 ## CLI
 
 ```bash
-knowledge_ops.py search --greedy --max-size 6
-knowledge_ops.py search --redundancy-scale 2 --redundancy-threshold 0.22
-knowledge_ops.py search --redundancy-scale 0   # disable redundancy term
+coherence search --greedy --max-size 6
+coherence search --redundancy-scale 2 --redundancy-threshold 0.22
+coherence search --redundancy-scale 0   # disable redundancy term
 ```

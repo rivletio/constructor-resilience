@@ -34,8 +34,10 @@ from .atoms import (
     atom_text,
     atom_texts,
     back_out,
+    coerce_atom,
     make_atom,
     normalize_store_atoms,
+    parse_ingest_payload,
     set_review,
 )
 
@@ -157,40 +159,63 @@ def slugify(s: str) -> str:
     return s.strip("-")[:64] or "topic"
 
 
-def cmd_create(args):
+def create_topic(
+    *,
+    title: str,
+    topic_id: str | None = None,
+    description: str = "",
+    tags: list | None = None,
+    use: bool = False,
+    exist_ok: bool = False,
+) -> dict:
     meta = load_meta()
-    topic_id = args.id or slugify(args.title)
-    if any(t["id"] == topic_id for t in meta.get("topics", [])):
-        raise SystemExit(f"Topic already exists: {topic_id}")
+    topic_id = topic_id or slugify(title)
+    existing = next((t for t in meta.get("topics", []) if t["id"] == topic_id), None)
+    if existing:
+        if not exist_ok:
+            raise SystemExit(f"Topic already exists: {topic_id}")
+        if use:
+            set_active(topic_id, meta)
+        return existing
 
     rel_path = f"topics/{topic_id}"
     topic_dir = get_root() / rel_path
     topic_dir.mkdir(parents=True, exist_ok=True)
 
-    description = args.description or args.title
+    description = description or title
     store = empty_store(description)
     atoms_path = topic_dir / "atoms.json"
     save_json(atoms_path, store)
 
     topic = {
         "id": topic_id,
-        "title": args.title,
+        "title": title,
         "path": rel_path,
         "description": description,
         "atom_count": 0,
         "edge_count": 0,
         "created": now_iso(),
         "updated": now_iso(),
-        "tags": args.tags or [],
+        "tags": tags or [],
     }
     meta.setdefault("topics", []).append(topic)
     save_meta(meta)
 
-    if args.use or not get_active():
+    if use or not get_active():
         set_active(topic_id, meta)
+    return topic
 
-    print(f"Created topic: {topic_id}")
-    print(f"  {atoms_path}")
+
+def cmd_create(args):
+    topic = create_topic(
+        title=args.title,
+        topic_id=args.id,
+        description=args.description or "",
+        tags=args.tags or [],
+        use=bool(args.use),
+    )
+    print(f"Created topic: {topic['id']}")
+    print(f"  {topic_atoms_path(topic)}")
 
 
 def cmd_path(_args):
@@ -281,6 +306,20 @@ def cmd_render(args):
 
 
 
+def _append_scored_atom(store: dict, atom, *, auto_score: bool = False, min_abs: float = 0.05):
+    atoms = store.setdefault("atoms", [])
+    atoms.append(atom)
+    idx = len(atoms) - 1
+    cons = parse_consistency_map(store)
+    if auto_score and idx > 0:
+        for i in range(idx):
+            s = heuristic_pair_score(atoms[i], atom)
+            if abs(s) >= min_abs:
+                cons[(i, idx)] = s
+        store["consistency"] = dump_consistency_map(cons)
+    return idx, cons
+
+
 def cmd_add_atom(args):
     active, path, store = load_active_store()
     text = args.text.strip()
@@ -297,17 +336,9 @@ def cmd_add_atom(args):
             method="manual",
             source="add-atom",
             review_status=status,
+            constraint=getattr(args, "constraint", None),
         )
-    atoms = store.setdefault("atoms", [])
-    atoms.append(atom)
-    idx = len(atoms) - 1
-    cons = parse_consistency_map(store)
-    if args.auto_score and idx > 0:
-        for i in range(idx):
-            s = heuristic_pair_score(atoms[i], atom)
-            if abs(s) >= 0.05:
-                cons[(i, idx)] = s
-        store["consistency"] = dump_consistency_map(cons)
+    idx, cons = _append_scored_atom(store, atom, auto_score=bool(args.auto_score))
     store["updated"] = now_iso()
     save_json(path, store)
     refresh_topic_counts(active["topic_id"])
@@ -315,6 +346,186 @@ def cmd_add_atom(args):
     if args.auto_score:
         linked = sum(1 for (i, j) in cons if j == idx or i == idx)
         print(f"  auto-score edges involving new atom: {linked}")
+
+
+def cmd_ingest(args):
+    """Host-model mint: load claims JSON (no MLX)."""
+    raw = None
+    if args.json:
+        raw = Path(args.json).expanduser().read_text(encoding="utf-8")
+    elif args.text:
+        raw = args.text
+    else:
+        raw = sys.stdin.read()
+    if not (raw or "").strip():
+        raise SystemExit("ingest requires --json PATH, --text JSON, or stdin")
+    try:
+        payload = json.loads(raw)
+        items = parse_ingest_payload(payload)
+    except (json.JSONDecodeError, ValueError) as e:
+        raise SystemExit(f"ingest JSON: {e}") from e
+    if not items:
+        raise SystemExit("ingest: no atoms in payload")
+
+    if getattr(args, "title", None):
+        create_topic(title=args.title, topic_id=args.topic, use=True, exist_ok=True)
+    elif getattr(args, "topic", None):
+        set_active(args.topic)
+
+    active, path, store = load_active_store()
+    status = REVIEW_ACCEPTED if args.accepted else REVIEW_PENDING
+    added = 0
+    for item in items:
+        try:
+            atom = coerce_atom(
+                item,
+                method="host_mint",
+                review_status=status,
+                source=args.source or "ingest",
+            )
+        except ValueError as e:
+            print(f"  skip: {e}")
+            continue
+        idx, _cons = _append_scored_atom(store, atom, auto_score=bool(args.auto_score))
+        added += 1
+        mcount = len(atom.get("mentions") or []) if isinstance(atom, dict) else 0
+        rcount = len(atom.get("refs") or []) if isinstance(atom, dict) else 0
+        extra = ""
+        if mcount or rcount:
+            extra = f" mentions={mcount} refs={rcount}"
+        print(f"  [{idx}]{extra} {atom_text(atom)}")
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(
+        f"Ingested {added} atom(s) → {active['topic_id']} [{status}]"
+        + (" (auto-scored)" if args.auto_score else "")
+    )
+
+
+def cmd_share(args):
+    """Write an intentional share envelope from the active packet."""
+    from .share import make_share
+
+    active, path, store = load_active_store()
+    path = Path(path)
+    packet_path = path.with_name("packet.json")
+    if args.rebuild or not packet_path.exists():
+        rebuilt = _rebuild_greedy_packet(active, path, store, max_size=args.max_size)
+        if not rebuilt:
+            raise SystemExit("No active atoms to share")
+        packet_path = Path(rebuilt)
+    packet = load_json(packet_path, {}) or {}
+    texts = [atom_text(a) for a in (packet.get("atoms") or [])]
+    if not texts:
+        raise SystemExit("Packet is empty — run: coherence search --greedy")
+
+    # Join mentions from the source atoms (by text match)
+    source_atoms = []
+    full = store.get("atoms") or []
+    by_text = {atom_text(a): a for a in full}
+    for t in texts:
+        source_atoms.append(by_text.get(t, t))
+
+    share = make_share(
+        from_id=args.from_id,
+        to_id=args.to,
+        atoms=source_atoms,
+        audience=args.audience,
+        forward=args.forward,
+        note=args.note or "",
+        topic_id=active.get("topic_id"),
+    )
+    share["packet"] = {
+        "atom_indices": packet.get("atom_indices") or [],
+        "method": packet.get("method"),
+        "energy": packet.get("energy"),
+        "max_size": packet.get("max_size"),
+    }
+    out = Path(args.out) if args.out else path.with_name("share.json")
+    save_json(out, share)
+    print(f"wrote {out}")
+    print(
+        f"share {share['share_id']}  {share['from']} → {share['to']}  "
+        f"audience={share['audience']} forward={share['forward']}  "
+        f"atoms={len(share['atoms'])} mentions={len(share.get('mentions') or [])}"
+    )
+    for i, a in enumerate(share["atoms"]):
+        print(f"  [{i}] {a}")
+
+
+def cmd_import(args):
+    """Import atoms.json, packet.json, or an intentional_share as a topic."""
+    src = Path(args.path).expanduser()
+    data = load_json(src)
+    if not data:
+        raise SystemExit(f"Missing or empty: {src}")
+
+    kind = data.get("kind") if isinstance(data, dict) else None
+    title = args.title
+    topic_id = args.topic
+    items = []
+    cons_in = {}
+    share_meta = None
+
+    if isinstance(data, list):
+        items = data
+    elif kind == "intentional_share":
+        items = data.get("atoms") or []
+        title = title or data.get("topic_id") or f"from-{data.get('from') or 'share'}"
+        share_meta = {
+            "share_id": data.get("share_id"),
+            "from": data.get("from"),
+            "to": data.get("to"),
+            "audience": data.get("audience"),
+            "forward": data.get("forward"),
+            "content_refs": data.get("content_refs") or [],
+            "mentions": data.get("mentions") or [],
+        }
+    elif "atoms" in data:
+        items = data.get("atoms") or []
+        cons_in = data.get("consistency") or {}
+        title = title or data.get("description") or src.parent.name
+    else:
+        raise SystemExit("import expects atoms.json, a packet, or kind=intentional_share")
+
+    if not items:
+        raise SystemExit("import: no atoms in source")
+
+    topic = create_topic(
+        title=title or src.stem,
+        topic_id=topic_id,
+        description=args.title or title or "",
+        use=bool(args.use),
+        exist_ok=True,
+    )
+    set_active(topic["id"])
+    active, path, store = load_active_store()
+    status = REVIEW_ACCEPTED if args.accepted else REVIEW_PENDING
+    method = "received" if kind == "intentional_share" else "imported"
+    start = len(store.get("atoms") or [])
+    for item in items:
+        atom = coerce_atom(
+            item,
+            method=method,
+            review_status=status,
+            source=str(src),
+        )
+        _append_scored_atom(store, atom, auto_score=bool(args.auto_score))
+    if cons_in and start == 0:
+        store["consistency"] = cons_in
+    if share_meta:
+        store["share"] = share_meta
+        vis = share_meta.get("audience")
+        if vis == "public":
+            store["visibility"] = "public"
+        elif vis:
+            store["visibility"] = "circle"
+    store["updated"] = now_iso()
+    save_json(path, store)
+    refresh_topic_counts(active["topic_id"])
+    print(f"Imported {len(items)} atom(s) → {active['topic_id']}")
+    print(f"  {path}")
 
 
 def cmd_mint(args):
@@ -806,7 +1017,7 @@ def cmd_search(args):
     for rank, (selected, eng) in enumerate(top):
         print(f"\n#{rank}  E={eng:.4f}  size={len(selected)}")
         for a in selected:
-            print(f"  - {a}")
+            print(f"  - {atom_text(a)}")
     if write and top:
         selected, eng = top[0]
         doc = build_packet_doc(
@@ -917,7 +1128,7 @@ def _topic_blob(topic: dict) -> str:
     try:
         store = load_json(topic_atoms_path(topic), {})
         for a in (store.get("atoms") or [])[:20]:
-            parts.append(a)
+            parts.append(atom_text(a))
     except Exception:
         pass
     return " ".join(parts).lower()
@@ -986,7 +1197,7 @@ def cmd_cache(args):
         )
         print(f"  packet E={eng:.3f} size={len(selected)}")
         for a in selected:
-            print(f"  • {a}")
+            print(f"  • {atom_text(a)}")
         doc = build_packet_doc(
             t["id"], atoms, selected, eng, "greedy-cache",
             args.max_size, args.redundancy_scale, query=args.query,
@@ -1082,50 +1293,17 @@ def cmd_export(args):
     # --- human-readable titles ---
     def make_title(text: str, idx: int, used: set) -> str:
         """Short human name for an atom note (not a sentence)."""
-        t = re.sub(r"\s+", " ", text).strip()
-        # Known-pattern shortcuts
-        patterns = [
-            (r"^Constructor theory \(Deutsch/Marletto\) defines knowledge", "Knowledge as constructor (Deutsch/Marletto)"),
-            (r"^Constructor theory itself remains primarily", "Constructor theory still foundational physics"),
-            (r"^Constructor theory still frames knowledge", "Constructor theory vs LLM engineering gap"),
-            (r"^No published work exactly matches", "No exact published match for this approach"),
-            (r"^Closest technical parallel", "QUBO-RAG as closest parallel"),
-            (r"^QUBO-Optimized Evidence Selection for RAG", "QUBO-RAG separates selection from generation"),
-            (r"^QUBO formulations are already being mapped", "QUBO mapped to annealers and SA"),
-            (r"^The skill occupies a relatively open niche", "Skill niche: CT framing plus QUBO cache"),
-            (r"^Multiple active research lines on LLM context", "Other context-compression research lines"),
-            (r"^Training-free hybrid graph-prior", "Hybrid graph-prior context compression"),
-            (r"^Directed Information gamma-covering", "Directed-information gamma-covering"),
-            (r"^An emerging pattern across 2025-2026", "Selection vs generation pattern (2025-26)"),
-            (r"^JEPA \(Joint Embedding", "JEPA: predict in latent space"),
-            (r"^Unlike autoregressive LLMs", "JEPA vs next-token prediction"),
-            (r"^V-JEPA and V-JEPA 2", "V-JEPA video world models"),
-            (r"^V-JEPA-style models can acquire intuitive", "Intuitive physics from V-JEPA"),
-            (r"^Action-conditioned JEPA", "Action-conditioned JEPA planning"),
-            (r"^The dominant practical pattern in 2025-2026 is complementarity", "JEPA–LLM complementarity pattern"),
-            (r"^V-JEPA 2\.1", "V-JEPA 2.1 dense video features"),
-            (r"^LeWorldModel", "LeWorldModel stable end-to-end JEPA"),
-            (r"^LLM-JEPA", "LLM-JEPA embedding objective"),
-            (r"^VL-JEPA", "VL-JEPA predicts text embeddings"),
-            (r"^Hybrid approaches such as JART", "JART hybrid AR + JEPA"),
-            (r"^JEPA-Reasoner", "JEPA-Reasoner decouples latent reasoning"),
-            (r"^I-JEPA", "I-JEPA image representations"),
-        ]
-        for pat, label in patterns:
-            if re.search(pat, t, re.I):
-                t = label
-                break
-        else:
-            for sep in [": ", " — ", " – "]:
-                if sep in t:
-                    head = t.split(sep, 1)[0].strip()
-                    if 8 <= len(head) <= 64:
-                        t = head
-                        break
-            if len(t) > 60:
-                cut = t[:60].rsplit(" ", 1)[0]
-                t = cut if len(cut) >= 16 else t[:60]
-            t = t.rstrip(".,;:")
+        t = re.sub(r"\s+", " ", atom_text(text)).strip()
+        for sep in [": ", " — ", " – "]:
+            if sep in t:
+                head = t.split(sep, 1)[0].strip()
+                if 8 <= len(head) <= 64:
+                    t = head
+                    break
+        if len(t) > 60:
+            cut = t[:60].rsplit(" ", 1)[0]
+            t = cut if len(cut) >= 16 else t[:60]
+        t = t.rstrip(".,;:")
         base = t
         n = 2
         while t.lower() in used:
@@ -1135,7 +1313,7 @@ def cmd_export(args):
         return t
 
     used_titles = set()
-    titles = [make_title(a, i, used_titles) for i, a in enumerate(atoms)]
+    titles = [make_title(atom_text(a), i, used_titles) for i, a in enumerate(atoms)]
 
     def safe_note_name(title: str) -> str:
         # Same string for [[wikilink]] and filename stem (Obsidian resolution)
@@ -1162,12 +1340,14 @@ def cmd_export(args):
     packet_atoms, packet_e = mod.greedy_resilient(
         atoms, cons, max_size=int(args.packet_size), redundancy_scale=2.0
     )
+    texts = atom_texts(atoms)
     packet_idx = []
     for p in packet_atoms:
-        for i, a in enumerate(atoms):
-            if a == p:
-                packet_idx.append(i)
-                break
+        pt = atom_text(p)
+        try:
+            packet_idx.append(texts.index(pt))
+        except ValueError:
+            continue
 
     out_dir = Path(args.out) if args.out else store_path.parent / "export_obsidian"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1213,7 +1393,7 @@ def cmd_export(args):
         lines.append("_Empty packet._")
     else:
         for n, i in enumerate(packet_idx, 1):
-            lines.append(f"{n}. [[{titles[i]}]] — {atoms[i]}")
+            lines.append(f"{n}. [[{titles[i]}]] — {atom_text(atoms[i])}")
             lines.append("")
 
     lines += [
@@ -1230,7 +1410,7 @@ def cmd_export(args):
         "",
         "- ★ marks atoms currently in the resilient packet.",
         f"- Links appear on each atom note when |consistency| ≥ {thr}.",
-        "- Source of truth for agents remains `atoms.json`; this vault is for people.",
+        "- Source of truth for agents remains `atoms.json`; this export is for people.",
         "",
         "## Strong relationships",
         "",
@@ -1245,7 +1425,7 @@ def cmd_export(args):
     all_refs = []
     seen_ref = set()
     for a in atoms:
-        for r in extract_references(a):
+        for r in extract_references(atom_text(a)):
             if r["url"] not in seen_ref:
                 seen_ref.add(r["url"])
                 all_refs.append(r)
@@ -1258,7 +1438,7 @@ def cmd_export(args):
 
     (out_dir / main_name).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    # --- Vault landing page (what you see first) ---
+    # --- Export landing page (what you see first) ---
     other_topics = [t for t in meta.get("topics", []) if t.get("id") != topic_id]
     idx = [
         "---",
@@ -1276,7 +1456,7 @@ def cmd_export(args):
         "",
         f"1. Open [[{title}]] — research writeup, constructor state, and table of contents for the active topic.",
         "2. Browse atom notes from that page (named `[[wiki-links]]`).",
-        "3. Agents should still use `atoms.json` as the source of truth; this vault is for people.",
+        "3. Agents should still use `atoms.json` as the source of truth; this export is for people.",
         "",
         "## Active topic",
         "",
@@ -1386,7 +1566,7 @@ def cmd_export(args):
         f"- **Links** — consistency edges with |score| ≥ {thr}",
         "- **Mermaid** — rendered by Obsidian (Live Preview / Reading view)",
         "",
-        "## This vault vs agents",
+        "## This export vs agents",
         "",
         "| Audience | Artifact |",
         "|----------|----------|",
@@ -1399,7 +1579,7 @@ def cmd_export(args):
         idx += [
             "## Other topics in the meta-graph",
             "",
-            "_Re-run export with `--topic <id>` to generate a vault (or section) for each._",
+            "_Re-run export with `--topic <id>` to generate a folder (or section) for each._",
             "",
         ]
         for t in other_topics:
@@ -1591,7 +1771,29 @@ def main(argv=None):
         action="store_true",
         help="Mark review status accepted (default: pending)",
     )
+    p_add.add_argument(
+        "--constraint",
+        choices=["possibility", "impossibility", "fact", "decision"],
+        help="Constructor kind for this claim",
+    )
     p_add.set_defaults(func=cmd_add_atom)
+
+    p_ingest = sub.add_parser(
+        "ingest",
+        help="Host-model mint: load claims JSON into the active topic (no MLX)",
+    )
+    p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
+    p_ingest.add_argument("--text", help="Inline JSON string")
+    p_ingest.add_argument("--title", help="Create/use a topic with this title")
+    p_ingest.add_argument("--topic", help="Topic id to use")
+    p_ingest.add_argument("--source", default="ingest", help="Provenance source label")
+    p_ingest.add_argument("--auto-score", action="store_true")
+    p_ingest.add_argument(
+        "--accepted",
+        action="store_true",
+        help="Mark ingested atoms accepted (default: pending)",
+    )
+    p_ingest.set_defaults(func=cmd_ingest)
 
     p_mint = sub.add_parser(
         "mint",
@@ -1832,6 +2034,44 @@ def main(argv=None):
     p_export.add_argument("--min-score", type=float, default=0.55, help="Min |consistency| for links")
     p_export.add_argument("--packet-size", type=int, default=6, help="Resilient packet size for writeup")
     p_export.set_defaults(func=cmd_export)
+
+    p_share = sub.add_parser(
+        "share",
+        help="Write an intentional share envelope from the active packet",
+    )
+    p_share.add_argument("--to", required=True, help="Recipient id")
+    p_share.add_argument("--from-id", default="local", dest="from_id", help="Sender id")
+    p_share.add_argument(
+        "--audience",
+        choices=["direct", "circle", "public"],
+        default="circle",
+    )
+    p_share.add_argument(
+        "--forward",
+        choices=["none", "circle", "public"],
+        default="none",
+    )
+    p_share.add_argument("--note", default="")
+    p_share.add_argument("--out", help="Output path (default: topics/<id>/share.json)")
+    p_share.add_argument("--rebuild", action="store_true", help="Rebuild packet first")
+    p_share.add_argument("--max-size", type=int, default=6)
+    p_share.set_defaults(func=cmd_share)
+
+    p_imp = sub.add_parser(
+        "import",
+        help="Import atoms.json, packet, or intentional_share as a topic",
+    )
+    p_imp.add_argument("path", help="Path to atoms.json / packet.json / share.json")
+    p_imp.add_argument("--topic", help="Topic id to create or append")
+    p_imp.add_argument("--title", help="Topic title")
+    p_imp.add_argument("--use", action="store_true")
+    p_imp.add_argument("--auto-score", action="store_true")
+    p_imp.add_argument(
+        "--accepted",
+        action="store_true",
+        help="Mark imported atoms accepted (default: pending)",
+    )
+    p_imp.set_defaults(func=cmd_import)
 
     args = parser.parse_args(argv)
     set_root(args.root)
