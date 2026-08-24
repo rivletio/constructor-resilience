@@ -620,7 +620,7 @@ def cmd_mint(args):
     print(
         f"Minted {added} pending atom(s) via {result['model']} "
         f"(dropped {n_drop} ungrounded) from {source_label} "
-        f"→ review with: coherence review --serve"
+        f"→ review with: coherence review --serve   # add --browser only if asked"
     )
 
 
@@ -726,7 +726,7 @@ def cmd_review(args):
         active["topic_id"],
         host=args.host,
         port=args.port,
-        open_browser=not args.no_browser,
+        open_browser=bool(getattr(args, "browser", False)) and not getattr(args, "no_browser", False),
         on_change=on_change,
     )
 
@@ -798,7 +798,7 @@ def cmd_critique(args):
         f"mode={mode} accept={a['accepted']} edit={a['edited']} "
         f"reject={a['rejected']} proposed_only={a['proposed_only']}"
     )
-    print("Review UI: coherence review --serve")
+    print("Review UI: coherence review --serve   # --browser only if asked")
 
 
 def cmd_eval(args):
@@ -1888,7 +1888,12 @@ def main(argv=None):
     p_rev.add_argument("--serve", action="store_true", default=True, help="Start review server")
     p_rev.add_argument("--host", default="127.0.0.1")
     p_rev.add_argument("--port", type=int, default=8765)
-    p_rev.add_argument("--no-browser", action="store_true")
+    p_rev.add_argument(
+        "--browser",
+        action="store_true",
+        help="Open the system browser (off by default — can crash Chrome)",
+    )
+    p_rev.add_argument("--no-browser", action="store_true", help="Do not open a browser (default)")
     p_rev.add_argument(
         "--apply-only",
         action="store_true",

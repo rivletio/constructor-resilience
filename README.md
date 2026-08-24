@@ -58,7 +58,7 @@ Wire format: [SPEC.md](./SPEC.md). Human walkthrough: [docs/USER_MANUAL.md](./do
 coherence ensure-model
 coherence mint --file ./notes.md --theme "world models" --ensure-model --auto-score
 coherence critique --source-file ./notes.md --apply
-coherence review --serve          # http://127.0.0.1:8765
+coherence review --serve --browser   # http://127.0.0.1:8765; omit --browser to avoid opening Chrome
 coherence reject 3 --reason "claimed impossibility does not hold"
 coherence eval --query "What is JEPA?" --ensure-model
 ```

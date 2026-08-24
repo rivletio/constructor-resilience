@@ -393,7 +393,7 @@ def serve(
     *,
     host: str = "127.0.0.1",
     port: int = 8765,
-    open_browser: bool = True,
+    open_browser: bool = False,
     on_change: Callable[[], None] | None = None,
 ) -> None:
     store_path = Path(store_path)
