@@ -97,4 +97,4 @@ Circle policy belongs to the host; this repo is the method.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+[AGPL-3.0-or-later](./LICENSE) — GNU Affero General Public License v3 or later.

@@ -7,7 +7,7 @@ name = "constructor-resilience"
 version = "0.1.2"
 description = "Durable claims, resume packets, and interest-surface sharing"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.10"
 authors = [{ name = "Rivlet / constructor-resilience contributors" }]
 keywords = [
@@ -20,7 +20,7 @@ keywords = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
