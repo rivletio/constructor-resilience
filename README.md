@@ -34,17 +34,16 @@ Store: `$COHERENCE_ROOT` or `$PWD/.coherence`.
 ## Quick start
 
 ```bash
-coherence status
-coherence create --title "My AI interests" --use
-coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score --accepted
-coherence search --greedy --max-size 6
+coherence pack --title "My AI interests" --json ./claims.json
 coherence share --to alice --audience circle
 ```
 
-The agent path (no extra model): write claims, then ingest.
+Or one claim at a time:
 
 ```bash
-coherence ingest --json ./claims.json --title "World models" --auto-score
+coherence create --title "My AI interests" --use
+coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score
+coherence packet --rebuild
 ```
 
 ```json

@@ -118,8 +118,19 @@ def cmd_status(_args):
             store = load_json(p)
             print(f"  atom_count: {len(store.get('atoms', []))}")
             print(f"  edge_count: {len(store.get('consistency', {}))}")
+            pending = sum(
+                1
+                for a in (store.get("atoms") or [])
+                if atom_review_status(a) == REVIEW_PENDING
+            )
+            if pending:
+                print(f"  pending_review: {pending}")
     else:
-        print("Active topic: (none — run: coherence use <topic-id>)")
+        print("Active topic: (none)")
+        if not meta.get("topics"):
+            print('  Pack claims:  coherence pack --title "Theme" --json claims.json')
+        else:
+            print("  Zoom in:      coherence use <topic-id>")
 
 
 def cmd_list(_args):
@@ -226,10 +237,18 @@ def refresh_topic_counts(topic_id: str):
     save_meta(meta)
 
 
+def _no_topic_exit() -> None:
+    raise SystemExit(
+        "No active topic.\n"
+        '  Pack claims:  coherence pack --title "Theme" --json claims.json\n'
+        "  Or zoom in:   coherence use <topic-id>"
+    )
+
+
 def load_active_store():
     active = get_active()
     if not active:
-        raise SystemExit("No active topic. Run: coherence use <topic-id>")
+        _no_topic_exit()
     path = Path(active["atoms_path"])
     store = load_json(path)
     if store is None:
@@ -319,7 +338,7 @@ def cmd_add_atom(args):
         atom = text
         status = REVIEW_ACCEPTED
     else:
-        status = REVIEW_ACCEPTED if getattr(args, "accepted", False) else REVIEW_PENDING
+        status = REVIEW_PENDING if getattr(args, "pending", False) else REVIEW_ACCEPTED
         atom = make_atom(
             text,
             method="manual",
@@ -362,13 +381,13 @@ def cmd_ingest(args):
         set_active(args.topic)
 
     active, path, store = load_active_store()
-    status = REVIEW_ACCEPTED if args.accepted else REVIEW_PENDING
+    status = REVIEW_PENDING if getattr(args, "pending", False) else REVIEW_ACCEPTED
     added = 0
     for item in items:
         try:
             atom = coerce_atom(
                 item,
-                method="host_mint",
+                method="ingest",
                 review_status=status,
                 source=args.source or "ingest",
             )
@@ -390,6 +409,29 @@ def cmd_ingest(args):
         f"Ingested {added} atom(s) → {active['topic_id']} [{status}]"
         + (" (auto-scored)" if args.auto_score else "")
     )
+    if added and not getattr(args, "no_packet", False):
+        rebuilt = _rebuild_greedy_packet(
+            active, path, store, max_size=int(getattr(args, "max_size", 6) or 6)
+        )
+        if rebuilt:
+            print(f"  packet {rebuilt}")
+
+
+def cmd_pack(args):
+    """Ingest claims and print the resume packet (the 'pack this session' verb)."""
+    if not getattr(args, "title", None) and not getattr(args, "topic", None) and not get_active():
+        raise SystemExit('pack needs --title "Theme" (or an active topic)')
+    if not getattr(args, "auto_score", False):
+        args.auto_score = True
+    cmd_ingest(args)
+    active, path, store = load_active_store()
+    packet_path = Path(path).with_name("packet.json")
+    if not packet_path.exists():
+        raise SystemExit("pack: no packet written (no active atoms)")
+    doc = load_json(packet_path, {}) or {}
+    print(f"packed {active['topic_id']}  size={len(doc.get('atoms') or [])}")
+    for i, a in enumerate(doc.get("atoms") or []):
+        print(f"  [{i}] {a}")
 
 
 def cmd_share(args):
@@ -1162,7 +1204,8 @@ def cmd_cache(args):
         ranked.append((score, inter, t))
     ranked.sort(reverse=True)
     if not ranked:
-        print("CACHE MISS — no matching topics. Consider create --use for this theme.")
+        print("CACHE MISS — no matching topics.")
+        print('  Pack claims:  coherence pack --title "Theme" --json claims.json')
         return
 
     mod = resilience_search
@@ -1758,7 +1801,12 @@ def main(argv=None):
     p_add.add_argument(
         "--accepted",
         action="store_true",
-        help="Mark review status accepted (default: pending)",
+        help="Keep the claim (default)",
+    )
+    p_add.add_argument(
+        "--pending",
+        action="store_true",
+        help="Queue for review instead of keeping",
     )
     p_add.add_argument(
         "--constraint",
@@ -1780,9 +1828,29 @@ def main(argv=None):
     p_ingest.add_argument(
         "--accepted",
         action="store_true",
-        help="Mark ingested atoms accepted (default: pending)",
+        help="Keep claims (default)",
     )
+    p_ingest.add_argument(
+        "--pending",
+        action="store_true",
+        help="Queue claims for review instead of keeping",
+    )
+    p_ingest.add_argument("--max-size", type=int, default=6, help="Packet size after ingest")
+    p_ingest.add_argument("--no-packet", action="store_true", help="Do not rebuild packet.json")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_pack = sub.add_parser(
+        "pack",
+        help="Pack claims into a topic and write the resume packet",
+    )
+    p_pack.add_argument("--json", help="Path to claims JSON")
+    p_pack.add_argument("--text", help="Inline claims JSON")
+    p_pack.add_argument("--title", help="Topic title (creates the topic if needed)")
+    p_pack.add_argument("--topic", help="Topic id to use")
+    p_pack.add_argument("--source", default="ingest")
+    p_pack.add_argument("--pending", action="store_true", help="Queue for review")
+    p_pack.add_argument("--max-size", type=int, default=6)
+    p_pack.set_defaults(func=cmd_pack, auto_score=True, accepted=False, no_packet=False)
 
     p_mint = sub.add_parser(
         "mint",
@@ -2028,7 +2096,11 @@ def main(argv=None):
         "share",
         help="Write share.json from the active packet",
     )
-    p_share.add_argument("--to", required=True, help="Recipient id")
+    p_share.add_argument(
+        "--to",
+        default="handoff",
+        help="Recipient label (default: handoff)",
+    )
     p_share.add_argument("--from-id", default="local", dest="from_id", help="Sender id")
     p_share.add_argument(
         "--audience",

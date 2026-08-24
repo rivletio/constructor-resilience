@@ -18,29 +18,27 @@ The cache is files on disk: `$COHERENCE_ROOT` or `$PWD/.coherence`. The chat log
 
 ## Workflow
 
-**Start.** Load what you already claimed:
+**Resume.** Load what you already claimed:
 
 ```bash
 coherence cache "your theme"
 # or: coherence use <topic-id>
 ```
 
-Read the packet first. Only chase what is not already there.
+Read the packet first. If CACHE MISS, pack (next). Only chase what is not already there.
 
-**Digest.** The agent writes claims from this conversation (no extra model):
+**Pack.** The agent writes claims from this conversation (no extra model):
 
 ```bash
-coherence ingest --json ./claims.json --auto-score
+coherence pack --title "your theme" --json ./claims.json
 coherence add-atom "Durable claim." --constraint fact --auto-score
 ```
 
-Atom JSON shape is in [SPEC.md](../SPEC.md). New atoms are `pending` unless `--accepted`. Back out anything that does not actually constrain a possibility or impossibility.
+Atom JSON shape is in [SPEC.md](../SPEC.md). `pack` keeps claims; MLX `mint` starts pending. Back out anything that does not actually constrain a possibility or impossibility.
 
-**Handoff.**
+**Handoff.** `pack` already wrote the packet.
 
 ```bash
-coherence search --greedy --max-size 6
-coherence packet --rebuild
 coherence share --to alice --audience circle --forward none
 ```
 
@@ -61,7 +59,7 @@ coherence intersect my-ai-interests lex-public --query consciousness
 |---------|------|
 | `status` `list` `use` `create` | Topics |
 | `cache` `find` | Find a packet for a question |
-| `add-atom` `ingest` | Write claims |
+| `pack` `ingest` `add-atom` | Write claims and a packet |
 | `review` `reject`/`backout` `set-review` | Review |
 | `search` `packet` | Compress |
 | `share` `import` `intersect` | Hand off / overlap |

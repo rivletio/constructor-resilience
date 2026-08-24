@@ -90,3 +90,35 @@ def test_ingest_share_import_roundtrip(tmp_path, capsys):
     text0 = imported["atoms"][0]["text"]
     assert "[from:" not in text0
     assert imported.get("share", {}).get("from") == "local"
+
+
+def test_pack_from_empty_store_writes_packet(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    claims = tmp_path / "claims.json"
+    claims.write_text(
+        json.dumps({"atoms": ["Packets are the share unit, not transcripts."]}),
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    _run(root, "status")
+    hint = capsys.readouterr().out
+    assert "pack --title" in hint
+    assert "Pack claims" in hint
+
+    _run(root, "pack", "--json", str(claims), "--title", "Share primitive")
+    out = capsys.readouterr().out
+    assert "packed share-primitive" in out
+    topic = root / "topics" / "share-primitive"
+    store = _load(topic / "atoms.json")
+    assert store["atoms"][0]["review"]["status"] == "accepted"
+    packet = _load(topic / "packet.json")
+    assert packet["atoms"]
+    assert "Packets are the share unit" in packet["atoms"][0]
+
+
+def test_cache_miss_points_at_ingest(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(root, "cache", "anything")
+    out = capsys.readouterr().out
+    assert "CACHE MISS" in out
+    assert "pack --title" in out
