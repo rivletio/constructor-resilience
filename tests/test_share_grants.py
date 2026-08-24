@@ -106,3 +106,21 @@ def test_youtube_timestamp_parsed_from_url_and_atom_refs():
     refs = extract_content_refs([atom])
     assert refs[0]["youtube_video_id"] == "qCbfTN-caFI"
     assert refs[0]["t"] == 3033
+    two = extract_content_refs(
+        [
+            {
+                "text": "a",
+                "refs": [
+                    {
+                        "kind": "youtube_video",
+                        "youtube_video_id": "qCbfTN-caFI",
+                        "t": 2904,
+                        "url": "https://www.youtube.com/watch?v=qCbfTN-caFI&t=2904",
+                    }
+                ],
+            },
+            atom,
+        ]
+    )
+    times = {r.get("t") for r in two}
+    assert times == {2904, 3033}

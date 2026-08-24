@@ -78,7 +78,15 @@ def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
     seen = set()
 
     def _add(ref: Dict[str, Any], atom_text: str) -> None:
-        key = ref.get("youtube_video_id") or ref.get("url") or ref.get("id")
+        key = (
+            ref.get("url")
+            or (
+                f"{ref.get('youtube_video_id')}@{ref.get('t')}"
+                if ref.get("youtube_video_id")
+                else None
+            )
+            or ref.get("id")
+        )
         if not key or key in seen:
             return
         seen.add(key)
