@@ -490,6 +490,9 @@ def cmd_pack(args):
     print(f"packed {active['topic_id']}  size={len(doc.get('atoms') or [])}")
     for i, a in enumerate(doc.get("atoms") or []):
         print(f"  [{i}] {a}")
+    from .check import format_check
+
+    print(format_check(store))
 
 
 def cmd_share(args):
@@ -642,11 +645,12 @@ def cmd_mint(args):
         mint_max_atoms=args.max_atoms,
         mint_min_grounding=args.min_grounding,
     )
-    result = mint_mod.mint_from_text(
+    result = mint_mod.mint_from_text_retry(
         source,
         theme=args.theme or active.get("title"),
         model=args.model,
         existing=store.get("atoms") or [],
+        attempts=args.attempts,
         cfg=cfg,
     )
     atoms = store.setdefault("atoms", [])
@@ -675,6 +679,13 @@ def cmd_mint(args):
     save_json(path, store)
     refresh_topic_counts(active["topic_id"])
     n_drop = len(result.get("dropped") or [])
+    sc = result.get("score") or {}
+    if sc:
+        print(
+            f"  self-eval attempt {result.get('attempt')}/{result.get('attempts')} "
+            f"ok={sc.get('ok')} kept={sc.get('n_atoms')} dropped={sc.get('n_dropped')} "
+            f"{sc.get('reasons') or ''}"
+        )
     print(
         f"Minted {added} pending atom(s) via {result['model']} "
         f"(dropped {n_drop} ungrounded) from {source_label} "
@@ -1818,6 +1829,16 @@ def cmd_intersect(args):
         print(f"  [{i}] ({src}) {a}")
 
 
+def cmd_check(_args):
+    """Mechanical self-eval of the active topic (small-model retry loop)."""
+    from .check import check_store, format_check
+
+    _active, _path, store = load_active_store()
+    print(format_check(store))
+    _rows, _n, n_fail = check_store(store)
+    if n_fail:
+        raise SystemExit(1)
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
@@ -1847,6 +1868,10 @@ def main(argv=None):
     p_create.set_defaults(func=cmd_create)
 
     sub.add_parser("path", help="Print active atoms.json path").set_defaults(func=cmd_path)
+    sub.add_parser(
+        "check",
+        help="Self-eval active atoms (FAIL → reject and pack again)",
+    ).set_defaults(func=cmd_check)
 
     p_render = sub.add_parser("render", help="Render active topic graph PNG")
     p_render.set_defaults(func=cmd_render)
@@ -1989,6 +2014,12 @@ def main(argv=None):
         help="Drop minted claims below this source-overlap ratio (default from config/env)",
     )
     p_mint.add_argument("--auto-score", action="store_true")
+    p_mint.add_argument(
+        "--attempts",
+        type=int,
+        default=None,
+        help="Self-eval retries if too few grounded atoms (default 3)",
+    )
     p_mint.add_argument(
         "--auto-accept",
         action="store_true",

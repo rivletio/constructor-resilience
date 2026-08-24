@@ -182,6 +182,50 @@ def test_pack_mention_at_file_line_and_timestamp(tmp_path, capsys):
     assert "qCbfTN-caFI" in m1["url"] and "t=3033" in m1["url"]
 
 
+def test_check_fails_missing_mentions_and_retries(tmp_path, capsys):
+    from coherence_cache.check import check_atom
+
+    assert check_atom("hi") == ["too short", "chat, not a claim", "missing constraint", "missing mentions"]
+    ok = {
+        "text": "ClaimParts attaches joins to the preceding atom.",
+        "constraint": "fact",
+        "mentions": [
+            {
+                "name": "ClaimParts",
+                "kind": "concept",
+                "path": "src/coherence_cache/cli.py",
+                "line": 358,
+                "url": "src/coherence_cache/cli.py#L358",
+            }
+        ],
+    }
+    assert check_atom(ok) == []
+    bad_file = {
+        "text": "ClaimParts attaches joins to the preceding atom.",
+        "constraint": "fact",
+        "mentions": [{"name": "ClaimParts", "kind": "concept", "path": "src/cli.py"}],
+    }
+    assert any("no line" in f for f in check_atom(bad_file))
+
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Bare",
+        "--constraint",
+        "fact",
+        "--atom",
+        "Packets are the share unit, not transcripts.",
+    )
+    out = capsys.readouterr().out
+    assert "FAIL missing mentions" in out
+    with pytest.raises(SystemExit) as exc:
+        _run(root, "check")
+    assert exc.value.code == 1
+    assert "FAIL missing mentions" in capsys.readouterr().out
+
+
 def test_cache_ignores_weak_tokens(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(
