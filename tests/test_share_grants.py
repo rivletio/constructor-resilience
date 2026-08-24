@@ -137,10 +137,12 @@ def test_arxiv_passage_url_opens_original_pdf_page():
     rec = make_arxiv_ref("1706.03762v5", page=2, excerpt="The Transformer follows this overall architecture")
     assert rec["id"] == "1706.03762"
     assert rec["abs"] == "https://arxiv.org/abs/1706.03762"
-    assert rec["pdf"] == "https://arxiv.org/pdf/1706.03762"
+    assert rec["pdf"] == "https://arxiv.org/pdf/1706.03762#page=2"
     assert rec["url"] == "https://arxiv.org/pdf/1706.03762#page=2"
     assert rec["page"] == 2
     assert "Transformer" in rec["excerpt"]
+    assert rec["html"].startswith("https://arxiv.org/html/1706.03762#:~:text=")
+    assert "Transformer" in rec["html"]
 
     parsed = parse_arxiv_url("https://arxiv.org/pdf/1706.03762#page=3")
     assert parsed["id"] == "1706.03762"
@@ -171,44 +173,45 @@ def test_arxiv_passage_url_opens_original_pdf_page():
     assert {r["page"] for r in pages} == {1, 5}
 
 
-def test_arxiv_page_and_paragraph_locator():
+def test_arxiv_paragraph_and_excerpt_locator():
     from coherence_cache.refs_util import (
+        arxiv_excerpt_fragment,
         extract_references,
         make_arxiv_ref,
         parse_arxiv_url,
     )
     from coherence_cache.share import extract_content_refs
 
+    excerpt = (
+        "We propose a new simple network architecture, the Transformer, "
+        "based solely on attention mechanisms, dispensing with recurrence "
+        "and convolutions entirely."
+    )
     rec = make_arxiv_ref(
         "1706.03762",
         page=1,
         paragraph=1,
-        html_id="abstract1.1",
-        excerpt="We propose a new simple network architecture, the Transformer",
+        excerpt=excerpt,
     )
     assert rec["page"] == 1
     assert rec["paragraph"] == 1
-    assert rec["html_id"] == "abstract1.1"
+    assert rec["excerpt"].startswith("We propose a new simple network architecture")
     assert rec["label"] == "arXiv:1706.03762 p.1 ¶1"
-    assert rec["url"] == "https://arxiv.org/html/1706.03762#abstract1.1"
-    assert rec["pdf"] == "https://arxiv.org/pdf/1706.03762"
-    assert rec["html"] == "https://arxiv.org/html/1706.03762#abstract1.1"
+    assert rec["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
+    assert rec["pdf"] == rec["url"]
+    frag = arxiv_excerpt_fragment(excerpt)
+    assert rec["html"] == f"https://arxiv.org/html/1706.03762{frag}"
+    assert "We%20propose%20a%20new%20simple%20network%20architecture" in rec["html"]
 
-    # Without html_id, paragraph is still stored; click lands on the PDF page.
-    pdf_only = make_arxiv_ref("1706.03762", page=1, paragraph=3)
-    assert pdf_only["paragraph"] == 3
-    assert pdf_only["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
-    assert "¶3" in pdf_only["label"]
+    parsed = parse_arxiv_url(
+        "https://arxiv.org/html/1706.03762#:~:text=We%20propose%20a%20new%20simple%20network%20architecture"
+    )
+    assert parsed["excerpt"].startswith("We propose a new simple network architecture")
 
-    parsed = parse_arxiv_url("https://arxiv.org/html/1706.03762#abstract1.1")
-    assert parsed["html_id"] == "abstract1.1"
-    assert parsed["url"].endswith("#abstract1.1")
-
-    found = extract_references("See arXiv:1706.03762 p.1 ¶3 and later p.5 paragraph 2.")
-    # First locator from the arXiv: token; second from the bare-id pass is same paper
-    # with a coarser/different tail — keep page+paragraph from the explicit cite.
-    ax = next(r for r in found if r["kind"] == "arxiv" and r.get("paragraph") == 3)
+    found = extract_references("See arXiv:1706.03762 p.1 ¶3")
+    ax = next(r for r in found if r["kind"] == "arxiv")
     assert ax["page"] == 1
+    assert ax["paragraph"] == 3
     assert ax["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
 
     para = extract_references("arXiv:1706.03762 page 1, paragraph 4")
@@ -224,7 +227,7 @@ def test_arxiv_page_and_paragraph_locator():
                 "id": "1706.03762",
                 "page": 1,
                 "paragraph": 1,
-                "html_id": "abstract1.1",
+                "excerpt": excerpt,
             }
         ],
     }
@@ -236,12 +239,13 @@ def test_arxiv_page_and_paragraph_locator():
                 "id": "1706.03762",
                 "page": 1,
                 "paragraph": 5,
-                "html_id": "S1.p4.1",
+                "excerpt": "In this work we propose the Transformer, a model architecture eschewing recurrence",
             }
         ],
     }
     refs = extract_content_refs([atom_a, atom_b])
     assert {(r["page"], r["paragraph"]) for r in refs} == {(1, 1), (1, 5)}
-    urls = {r["url"] for r in refs}
-    assert "https://arxiv.org/html/1706.03762#abstract1.1" in urls
-    assert "https://arxiv.org/html/1706.03762#S1.p4.1" in urls
+    assert all(r["url"] == "https://arxiv.org/pdf/1706.03762#page=1" for r in refs)
+    excerpts = {r["excerpt"] for r in refs}
+    assert any("new simple network architecture" in e for e in excerpts)
+    assert any("eschewing recurrence" in e for e in excerpts)

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Public paper surface: arXiv 1706.03762 with page + paragraph locators on the original article.",
+  "description": "Public paper surface: arXiv 1706.03762 with page, paragraph, and excerpt locators on the original article.",
   "created": "2026-08-24T00:00:00Z",
   "updated": "2026-08-24T00:00:00Z",
   "atoms": [
@@ -16,9 +16,6 @@
           "id": "1706.03762",
           "page": 1,
           "paragraph": 1,
-          "html_id": "abstract1.1",
-          "label": "arXiv:1706.03762 p.1 ¶1",
-          "url": "https://arxiv.org/html/1706.03762#abstract1.1",
           "excerpt": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms, dispensing with recurrence and convolutions entirely."
         }
       ],

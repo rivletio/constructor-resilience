@@ -58,22 +58,39 @@ def normalize_arxiv_id(aid: str) -> str:
     return re.sub(r"v\d+$", "", aid, flags=re.I)
 
 
+def arxiv_excerpt_fragment(excerpt: str | None) -> str:
+    """``#:~:text=`` token from an excerpt. Commas split fragments, so use the first clause."""
+    text = re.sub(r"\s+", " ", excerpt or "").strip()
+    if not text:
+        return ""
+    start = text.split(",")[0].strip()
+    if len(start) < 16:
+        start = re.sub(r",", "", text)
+        start = re.sub(r"\s+", " ", start).strip()
+    start = start[:96].strip(" -")
+    if not start:
+        return ""
+    from urllib.parse import quote
+
+    return "#:~:text=" + quote(start, safe="")
+
+
 def arxiv_passage_url(
     aid: str,
     *,
     page: int | None = None,
+    excerpt: str | None = None,
     html_id: str | None = None,
 ) -> str:
-    """Open the original arXiv artifact at the finest known locator.
-
-    PDF ``#page=N`` works for every paper. HTML ``#id`` (LaTeXML paragraph)
-    is finer when present. PDFs cannot address a paragraph.
-    """
+    """Open the original article. PDF ``#page=N`` works for every paper."""
     aid = normalize_arxiv_id(aid)
-    if html_id:
-        return f"https://arxiv.org/html/{aid}#{html_id.lstrip('#')}"
     if page:
         return f"https://arxiv.org/pdf/{aid}#page={int(page)}"
+    frag = arxiv_excerpt_fragment(excerpt)
+    if frag:
+        return f"https://arxiv.org/html/{aid}{frag}"
+    if html_id:
+        return f"https://arxiv.org/html/{aid}#{html_id.lstrip('#')}"
     return f"https://arxiv.org/abs/{aid}"
 
 
@@ -88,7 +105,8 @@ def make_arxiv_ref(
 ) -> Dict[str, Any]:
     aid = normalize_arxiv_id(aid)
     hid = html_id.lstrip("#") if html_id else None
-    loc = arxiv_passage_url(aid, page=page, html_id=hid)
+    quote = re.sub(r"\s+", " ", excerpt).strip() if excerpt else None
+    loc = arxiv_passage_url(aid, page=page, excerpt=quote, html_id=hid)
     label = f"arXiv:{aid}"
     if page:
         label += f" p.{int(page)}"
@@ -96,14 +114,20 @@ def make_arxiv_ref(
         label += f" ¶{int(paragraph)}"
     if section:
         label += f" §{section}"
+    html = f"https://arxiv.org/html/{aid}"
+    frag = arxiv_excerpt_fragment(quote)
+    if frag:
+        html += frag
+    elif hid:
+        html += f"#{hid}"
     rec: Dict[str, Any] = {
         "kind": "arxiv",
         "id": aid,
         "label": label,
         "url": loc,
         "abs": f"https://arxiv.org/abs/{aid}",
-        "pdf": f"https://arxiv.org/pdf/{aid}",
-        "html": f"https://arxiv.org/html/{aid}" + (f"#{hid}" if hid else ""),
+        "pdf": f"https://arxiv.org/pdf/{aid}" + (f"#page={int(page)}" if page else ""),
+        "html": html,
     }
     if page:
         rec["page"] = int(page)
@@ -113,8 +137,8 @@ def make_arxiv_ref(
         rec["section"] = str(section)
     if hid:
         rec["html_id"] = hid
-    if excerpt:
-        rec["excerpt"] = re.sub(r"\s+", " ", excerpt).strip()
+    if quote:
+        rec["excerpt"] = quote
     return rec
 
 
@@ -131,14 +155,20 @@ def parse_arxiv_url(url: str) -> Optional[Dict[str, Any]]:
     pm = re.search(r"#page=(\d+)", url or "", re.I)
     if pm:
         page = int(pm.group(1))
+    excerpt = None
+    tm = re.search(r"#:~:text=([^&#]*)", url or "")
+    if tm:
+        from urllib.parse import unquote
+
+        excerpt = unquote(tm.group(1).replace("+", " ")).strip() or None
     html_id = None
     if "/html/" in url and "#" in url and not pm:
         frag = url.split("#", 1)[1]
-        # Drop text-fragment suffix if present (#id:~:text=…)
-        frag = frag.split(":~:", 1)[0]
-        if frag and not frag.lower().startswith("page="):
-            html_id = frag
-    return make_arxiv_ref(aid, page=page, html_id=html_id)
+        if not frag.startswith(":~:"):
+            frag = frag.split(":~:", 1)[0]
+            if frag and not frag.lower().startswith("page="):
+                html_id = frag
+    return make_arxiv_ref(aid, page=page, html_id=html_id, excerpt=excerpt)
 
 
 def parse_youtube_url(url: str) -> Optional[Dict[str, Any]]:

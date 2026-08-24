@@ -95,7 +95,7 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 | `atoms[].text` | When object: the claim string (search/packet use this) |
 | `atoms[].constraint` | Optional constructor kind: `possibility` \| `impossibility` \| `fact` \| `decision` |
 | `atoms[].mentions` | Optional joins: `[{name, kind}]` where kind is `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. **Not** a second graph. |
-| `atoms[].refs` | Optional citations. **youtube_video**: `youtube_video_id`, `t` (seconds), `t_label`, `url` with `&t=` (original video). **arxiv**: `id`, `abs` / `pdf` / `html`, `page` + `paragraph` (page 1, paragraph N — 1-indexed body paragraphs on that PDF page), optional `html_id` (LaTeXML `#abstract1.1`, `#S1.p1.1`), `section`, `excerpt`. `url` opens the original artifact at that passage: HTML `#id` when `html_id` is known, else PDF `#page=N` (works for every paper). DOI/URL locators can reuse `page`/`paragraph`/`excerpt` later. |
+| `atoms[].refs` | Optional citations. **youtube_video**: `youtube_video_id`, `t` (seconds), `t_label`, `url` with `&t=` (original video). **arxiv**: `id`, `page` + `paragraph` (page 1, paragraph N) + `excerpt` (the quoted passage). `url` opens the original PDF at `#page=N` (works for every paper). `html` adds `#:~:text=` from the excerpt when present. DOI/URL locators can reuse `page`/`paragraph`/`excerpt` later. |
 | `atoms[].provenance` | **HOW it was made** — method, model, source, excerpt (required for mint) |
 | `atoms[].review.status` | `pending` \| `accepted` \| `edited` \| `rejected` |
 | `consistency` | Keys `"i,j"` with `i < j`; scores in **[-1, 1]** |

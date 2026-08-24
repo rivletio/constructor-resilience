@@ -86,7 +86,7 @@ def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
         if ref.get("kind") == "arxiv":
             key = (
                 f"arxiv:{ref.get('id')}@p{ref.get('page')}"
-                f"@¶{ref.get('paragraph')}@{ref.get('html_id')}"
+                f"@¶{ref.get('paragraph')}@{(ref.get('excerpt') or '')[:48]}"
             )
         else:
             key = (
