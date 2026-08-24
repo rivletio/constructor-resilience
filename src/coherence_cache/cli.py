@@ -30,7 +30,7 @@ from .atoms import (
     parse_ingest_payload,
     set_review,
 )
-from .mentions import parse_at_flag, parse_mention_flag
+from .mentions import parse_at_flag, parse_mention_flag, parse_pack_draft
 from .search import token_set
 
 extract_references = _refs_mod.extract_references
@@ -381,8 +381,30 @@ class ClaimParts(argparse.Action):
                 bag[-1]["mentions"][-1].update(loc)
 
 
+def _load_draft(args) -> None:
+    """Fill claim_parts (and title) from a labeled TITLE/CLAIM/MENTION/AT block."""
+    if getattr(args, "_draft_loaded", False):
+        return
+    d = getattr(args, "draft", None)
+    if not d:
+        return
+    args._draft_loaded = True
+    if str(d) == "-":
+        blob = sys.stdin.read()
+    else:
+        blob = Path(d).expanduser().read_text(encoding="utf-8")
+    title, items = parse_pack_draft(
+        blob, getattr(args, "constraint", None) or "fact"
+    )
+    bag = list(getattr(args, "claim_parts", None) or [])
+    args.claim_parts = bag + items
+    if title and not getattr(args, "title", None):
+        args.title = title
+
+
 def _items_from_args(args) -> list:
-    """Collect claims from --atom, --json, --text, or non-tty stdin. Never block on a TTY."""
+    """Collect claims from --atom, --json, --text, --draft, or non-tty stdin."""
+    _load_draft(args)
     items: list = []
     for rec in getattr(args, "claim_parts", None) or []:
         items.append(rec)
@@ -401,7 +423,7 @@ def _items_from_args(args) -> list:
     if not items:
         raise SystemExit(
             'Need claims:  --atom "Durable claim."  (repeatable)\n'
-            "           or --json claims.json  or --text JSON"
+            "           or --json claims.json  or --text JSON  or --draft FILE"
         )
     constraint = getattr(args, "constraint", None)
     if constraint:
@@ -475,6 +497,7 @@ def cmd_ingest(args):
 
 def cmd_pack(args):
     """Ingest claims and print the resume packet (the 'pack this session' verb)."""
+    _load_draft(args)
     if not getattr(args, "title", None) and not getattr(args, "topic", None) and not get_active():
         raise SystemExit(
             'pack needs --title "Theme" (or an active topic) and at least one --atom'
@@ -1930,6 +1953,10 @@ def main(argv=None):
         help="Locator on the preceding --mention: file.py:42, file.py#L42-L48, t=3033, or a URL",
     )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
+    p_ingest.add_argument(
+        "--draft",
+        help="Labeled TITLE/CLAIM/MENTION/AT file (or - for stdin)",
+    )
     p_ingest.add_argument("--text", help="Inline JSON string")
     p_ingest.add_argument(
         "--constraint",
@@ -1979,6 +2006,10 @@ def main(argv=None):
         help="Locator on the preceding --mention: file.py:42, file.py#L42-L48, t=3033, or a URL",
     )
     p_pack.add_argument("--json", help="Path to claims JSON")
+    p_pack.add_argument(
+        "--draft",
+        help="Labeled TITLE/CLAIM/MENTION/AT file (or - for stdin)",
+    )
     p_pack.add_argument("--text", help="Inline claims JSON")
     p_pack.add_argument(
         "--constraint",

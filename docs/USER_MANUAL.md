@@ -37,7 +37,7 @@ coherence pack --title "your theme" --constraint fact \
   --mention "A Person:person" --at "t=3033"
 ```
 
-The packing agent hangs names on the claim (`--mention Name:kind`) and pins where they appeared (`--at file.py:42` or `t=3033`). That is the extraction — not a second entity graph. After pack, `coherence check` (also printed by `pack`) lists FAIL atoms; reject them and pack replacements (at most two retries). Atom JSON shape is in [SPEC.md](../SPEC.md). `pack` keeps claims; MLX `mint` starts pending. Back out anything that does not actually constrain a possibility or impossibility.
+The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. Atom JSON shape is in [SPEC.md](../SPEC.md).
 
 **Handoff.** `pack` already wrote the packet.
 

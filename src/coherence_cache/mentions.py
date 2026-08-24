@@ -115,8 +115,8 @@ def _fill_mention_locator(rec: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_at_flag(raw: str) -> dict[str, Any]:
-    """Locator after ``--mention``: ``file.py:42``, ``file.py#L42-L48``, ``t=3033``, or a URL."""
-    text = (raw or "").strip()
+    """Locator: ``file.py:42``, ``file.py#L42-L48``, ``t=3033``, ``p.1 ¶2``, or a URL."""
+    text = (raw or "").strip().strip("'\"")
     if not text:
         return {}
     yt = parse_youtube_url(text)
@@ -131,12 +131,26 @@ def parse_at_flag(raw: str) -> dict[str, Any]:
         t = parse_timestamp(t_raw)
         if t is not None:
             return {"t": t, "t_label": timestamp_label(t)}
+    pm = re.search(
+        r"p(?:age)?[=.\s]*(\d+)(?:\s*[&,;]?\s*(?:¶+|para(?:graph)?[=.\s]*)(\d+))?",
+        text,
+        re.I,
+    )
+    if pm and re.match(r"^(p(?:age)?[=.\s]|¶)", text, re.I):
+        rec: dict[str, Any] = {"page": int(pm.group(1))}
+        if pm.group(2):
+            rec["paragraph"] = int(pm.group(2))
+        rec["label"] = f"p.{rec['page']}" + (f" ¶{rec['paragraph']}" if rec.get("paragraph") else "")
+        return rec
     m = re.match(r"(.+?)#L(\d+)(?:-L(\d+))?$", text, re.I)
     if m:
         return _file_loc(m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
     m = re.match(r"(.+):(\d+)(?:-(\d+))?$", text)
     if m and "://" not in m.group(1):
         return _file_loc(m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None)
+    m = re.match(r"(.+?)\s+line\s+(\d+)\s*$", text, re.I)
+    if m:
+        return _file_loc(m.group(1), int(m.group(2)), None)
     if re.match(r"https?://", text, re.I):
         return {"url": text}
     return _file_loc(text, None, None)
@@ -159,16 +173,72 @@ def _file_loc(path: str, line: int | None, end_line: int | None) -> dict[str, An
 
 
 def parse_mention_flag(raw: str) -> dict | None:
-    """``Name`` or ``Name:kind`` from a CLI flag."""
-    text = (raw or "").strip()
+    """``Name``, ``Name:kind``, or ``Name:kind @ file.py:42``."""
+    text = (raw or "").strip().strip("'\"")
     if not text:
         return None
+    loc = None
+    if " @" in text:
+        text, loc_raw = text.rsplit(" @", 1)
+        loc = parse_at_flag(loc_raw.strip())
+        text = text.strip()
+    rec = None
     if ":" in text:
         name, kind = text.rsplit(":", 1)
         kind = kind.strip().lower()
         if kind in VALID_MENTION_KIND and name.strip():
-            return normalize_mention({"name": name.strip(), "kind": kind})
-    return normalize_mention({"name": text, "kind": "concept"})
+            rec = normalize_mention({"name": name.strip(), "kind": kind})
+    if rec is None:
+        rec = normalize_mention({"name": text, "kind": "concept"})
+    if rec and loc:
+        rec.update(loc)
+        rec = _fill_mention_locator(rec)
+    return rec
+
+
+def parse_pack_draft(blob: str, default_constraint: str | None = "fact") -> tuple[str | None, list[dict]]:
+    """Labeled TITLE/CLAIM/MENTION/AT block for small hosts. Returns (title, items)."""
+    text = (blob or "").strip()
+    text = re.sub(r"^```(?:\w+)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    title = None
+    constraint = default_constraint
+    items: list[dict] = []
+    current: dict | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if ":" not in line:
+            if current and current.get("text"):
+                current["text"] = current["text"] + " " + line
+            continue
+        key, val = line.split(":", 1)
+        key = key.strip().upper()
+        val = val.strip()
+        if key in ("TITLE", "THEME"):
+            title = val or title
+        elif key == "CONSTRAINT" and val:
+            constraint = val.lower()
+        elif key in ("CLAIM", "ATOM"):
+            current = {"text": val, "mentions": []}
+            if constraint:
+                current["constraint"] = constraint
+            items.append(current)
+        elif key in ("MENTION", "JOIN") and current is not None:
+            rec = parse_mention_flag(val)
+            if rec:
+                current.setdefault("mentions", []).append(rec)
+        elif key == "AT" and current is not None:
+            mentions = current.get("mentions") or []
+            loc = parse_at_flag(val)
+            if loc and mentions:
+                mentions[-1].update(loc)
+                current["mentions"][-1] = _fill_mention_locator(mentions[-1])
+    for it in items:
+        if not it.get("mentions"):
+            it.pop("mentions", None)
+    return title, items
 
 
 def normalize_mentions(items: Iterable | None) -> list[dict]:

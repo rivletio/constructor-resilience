@@ -182,10 +182,62 @@ def test_pack_mention_at_file_line_and_timestamp(tmp_path, capsys):
     assert "qCbfTN-caFI" in m1["url"] and "t=3033" in m1["url"]
 
 
+def test_pack_draft_and_forgiving_locators(tmp_path, capsys):
+    from coherence_cache.mentions import parse_at_flag, parse_mention_flag, parse_pack_draft
+
+    loc = parse_at_flag("page=1&paragraph=1&excerpt=1")
+    assert loc["page"] == 1 and loc["paragraph"] == 1
+    m = parse_mention_flag("check_atom:concept @ src/coherence_cache/check.py:20")
+    assert m["name"] == "check_atom" and m["line"] == 20
+    title, items = parse_pack_draft(
+        """
+        TITLE: Check atom
+        CONSTRAINT: fact
+        CLAIM: check_atom returns fail reasons for one claim.
+        MENTION: check_atom:concept @ src/coherence_cache/check.py:20
+        CLAIM: RWKV-7 Goose uses constant memory per token.
+        MENTION: RWKV-7:work
+        AT: p.1 ¶1
+        """
+    )
+    assert title == "Check atom"
+    assert items[0]["mentions"][0]["line"] == 20
+    assert items[1]["mentions"][0]["page"] == 1
+    assert items[1]["mentions"][0]["paragraph"] == 1
+
+    draft = tmp_path / "pack.txt"
+    draft.write_text(
+        "TITLE: Draft pack\nCONSTRAINT: fact\n"
+        "CLAIM: check_atom returns fail reasons for one claim.\n"
+        "MENTION: check_atom:concept @ src/coherence_cache/check.py:20\n",
+        encoding="utf-8",
+    )
+    _run(root := tmp_path / ".coherence", "pack", "--draft", str(draft))
+    out = capsys.readouterr().out
+    assert "packed draft-pack" in out
+    assert "FAIL" not in out or "check 1/1 PASS" in out
+    store = _load(root / "topics" / "draft-pack" / "atoms.json")
+    assert store["atoms"][0]["mentions"][0]["line"] == 20
+
+
 def test_check_fails_missing_mentions_and_retries(tmp_path, capsys):
     from coherence_cache.check import check_atom
 
-    assert check_atom("hi") == ["too short", "chat, not a claim", "missing constraint", "missing mentions"]
+    assert "too short" in check_atom("hi")
+    assert "copied template, not a session claim" in check_atom(
+        {
+            "text": "One stand-alone sentence from the session.",
+            "constraint": "fact",
+            "mentions": [{"name": "X", "kind": "concept"}],
+        }
+    )
+    assert "quoted fragment, not a claim" in check_atom(
+        {
+            "text": '"constant memory usage and constant inference time per token."',
+            "constraint": "fact",
+            "mentions": [{"name": "RWKV-7", "kind": "work"}],
+        }
+    )
     ok = {
         "text": "ClaimParts attaches joins to the preceding atom.",
         "constraint": "fact",
@@ -224,6 +276,7 @@ def test_check_fails_missing_mentions_and_retries(tmp_path, capsys):
         _run(root, "check")
     assert exc.value.code == 1
     assert "FAIL missing mentions" in capsys.readouterr().out
+    # observe/experiment line is printed by format_check on FAIL
 
 
 def test_cache_ignores_weak_tokens(tmp_path, capsys):

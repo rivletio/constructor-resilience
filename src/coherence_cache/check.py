@@ -15,6 +15,10 @@ _CITE_IN_TEXT = re.compile(
     r"arxiv[:\s]+\d{4}\.\d{4,5}|youtube\.com/watch|youtu\.be/",
     re.I,
 )
+_TEMPLATE = re.compile(
+    r"<[A-Z][A-Z0-9:_-]+>|stand-alone sentence from the session|Name:kind @ file\.py",
+    re.I,
+)
 
 
 def check_atom(atom: Any) -> list[str]:
@@ -27,6 +31,10 @@ def check_atom(atom: Any) -> list[str]:
         fails.append("too short")
     if _CHAT.search(text or ""):
         fails.append("chat, not a claim")
+    if _TEMPLATE.search(text or ""):
+        fails.append("copied template, not a session claim")
+    if len(text) >= 2 and text[0] == text[-1] == '"':
+        fails.append("quoted fragment, not a claim")
     rec = atom if isinstance(atom, dict) else {}
     if not rec.get("constraint"):
         fails.append("missing constraint")
@@ -76,7 +84,8 @@ def format_check(store: dict) -> str:
     if failed_idx:
         idx = failed_idx[0]
         lines.append(
-            f'retry: coherence reject {idx} --reason "check fail" '
-            "then pack the replacement with --mention and --at"
+            f"observe: FAIL [{idx}]; "
+            f"experiment: coherence reject {idx} --reason \"check fail\" "
+            "then pack one replacement"
         )
     return "\n".join(lines)
