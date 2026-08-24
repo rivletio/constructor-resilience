@@ -169,3 +169,79 @@ def test_arxiv_passage_url_opens_original_pdf_page():
         ]
     )
     assert {r["page"] for r in pages} == {1, 5}
+
+
+def test_arxiv_page_and_paragraph_locator():
+    from coherence_cache.refs_util import (
+        extract_references,
+        make_arxiv_ref,
+        parse_arxiv_url,
+    )
+    from coherence_cache.share import extract_content_refs
+
+    rec = make_arxiv_ref(
+        "1706.03762",
+        page=1,
+        paragraph=1,
+        html_id="abstract1.1",
+        excerpt="We propose a new simple network architecture, the Transformer",
+    )
+    assert rec["page"] == 1
+    assert rec["paragraph"] == 1
+    assert rec["html_id"] == "abstract1.1"
+    assert rec["label"] == "arXiv:1706.03762 p.1 ¶1"
+    assert rec["url"] == "https://arxiv.org/html/1706.03762#abstract1.1"
+    assert rec["pdf"] == "https://arxiv.org/pdf/1706.03762"
+    assert rec["html"] == "https://arxiv.org/html/1706.03762#abstract1.1"
+
+    # Without html_id, paragraph is still stored; click lands on the PDF page.
+    pdf_only = make_arxiv_ref("1706.03762", page=1, paragraph=3)
+    assert pdf_only["paragraph"] == 3
+    assert pdf_only["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
+    assert "¶3" in pdf_only["label"]
+
+    parsed = parse_arxiv_url("https://arxiv.org/html/1706.03762#abstract1.1")
+    assert parsed["html_id"] == "abstract1.1"
+    assert parsed["url"].endswith("#abstract1.1")
+
+    found = extract_references("See arXiv:1706.03762 p.1 ¶3 and later p.5 paragraph 2.")
+    # First locator from the arXiv: token; second from the bare-id pass is same paper
+    # with a coarser/different tail — keep page+paragraph from the explicit cite.
+    ax = next(r for r in found if r["kind"] == "arxiv" and r.get("paragraph") == 3)
+    assert ax["page"] == 1
+    assert ax["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
+
+    para = extract_references("arXiv:1706.03762 page 1, paragraph 4")
+    p1 = next(r for r in para if r["kind"] == "arxiv")
+    assert p1["page"] == 1
+    assert p1["paragraph"] == 4
+
+    atom_a = {
+        "text": "Transformer dispenses with recurrence.",
+        "refs": [
+            {
+                "kind": "arxiv",
+                "id": "1706.03762",
+                "page": 1,
+                "paragraph": 1,
+                "html_id": "abstract1.1",
+            }
+        ],
+    }
+    atom_b = {
+        "text": "Introduces the Transformer without recurrence.",
+        "refs": [
+            {
+                "kind": "arxiv",
+                "id": "1706.03762",
+                "page": 1,
+                "paragraph": 5,
+                "html_id": "S1.p4.1",
+            }
+        ],
+    }
+    refs = extract_content_refs([atom_a, atom_b])
+    assert {(r["page"], r["paragraph"]) for r in refs} == {(1, 1), (1, 5)}
+    urls = {r["url"] for r in refs}
+    assert "https://arxiv.org/html/1706.03762#abstract1.1" in urls
+    assert "https://arxiv.org/html/1706.03762#S1.p4.1" in urls

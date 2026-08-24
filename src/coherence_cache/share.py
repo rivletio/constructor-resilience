@@ -83,15 +83,21 @@ def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
     seen = set()
 
     def _add(ref: Dict[str, Any], atom_text: str) -> None:
-        key = (
-            ref.get("url")
-            or (
-                f"{ref.get('youtube_video_id')}@{ref.get('t')}"
-                if ref.get("youtube_video_id")
-                else None
+        if ref.get("kind") == "arxiv":
+            key = (
+                f"arxiv:{ref.get('id')}@p{ref.get('page')}"
+                f"@¶{ref.get('paragraph')}@{ref.get('html_id')}"
             )
-            or ref.get("id")
-        )
+        else:
+            key = (
+                ref.get("url")
+                or (
+                    f"{ref.get('youtube_video_id')}@{ref.get('t')}"
+                    if ref.get("youtube_video_id")
+                    else None
+                )
+                or ref.get("id")
+            )
         if not key or key in seen:
             return
         seen.add(key)
@@ -118,6 +124,8 @@ def extract_content_refs(atoms: List) -> List[Dict[str, Any]]:
                         base = make_arxiv_ref(
                             aid,
                             page=rec.get("page") or (ax or {}).get("page"),
+                            paragraph=rec.get("paragraph")
+                            or (ax or {}).get("paragraph"),
                             section=rec.get("section"),
                             excerpt=rec.get("excerpt"),
                             html_id=rec.get("html_id") or (ax or {}).get("html_id"),

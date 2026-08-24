@@ -64,12 +64,16 @@ def arxiv_passage_url(
     page: int | None = None,
     html_id: str | None = None,
 ) -> str:
-    """Open the original arXiv artifact. PDF #page= works for every paper."""
+    """Open the original arXiv artifact at the finest known locator.
+
+    PDF ``#page=N`` works for every paper. HTML ``#id`` (LaTeXML paragraph)
+    is finer when present. PDFs cannot address a paragraph.
+    """
     aid = normalize_arxiv_id(aid)
-    if page:
-        return f"https://arxiv.org/pdf/{aid}#page={int(page)}"
     if html_id:
         return f"https://arxiv.org/html/{aid}#{html_id.lstrip('#')}"
+    if page:
+        return f"https://arxiv.org/pdf/{aid}#page={int(page)}"
     return f"https://arxiv.org/abs/{aid}"
 
 
@@ -77,15 +81,19 @@ def make_arxiv_ref(
     aid: str,
     *,
     page: int | None = None,
+    paragraph: int | None = None,
     section: str | None = None,
     excerpt: str | None = None,
     html_id: str | None = None,
 ) -> Dict[str, Any]:
     aid = normalize_arxiv_id(aid)
-    loc = arxiv_passage_url(aid, page=page, html_id=html_id)
+    hid = html_id.lstrip("#") if html_id else None
+    loc = arxiv_passage_url(aid, page=page, html_id=hid)
     label = f"arXiv:{aid}"
     if page:
         label += f" p.{int(page)}"
+    if paragraph:
+        label += f" ¶{int(paragraph)}"
     if section:
         label += f" §{section}"
     rec: Dict[str, Any] = {
@@ -95,14 +103,16 @@ def make_arxiv_ref(
         "url": loc,
         "abs": f"https://arxiv.org/abs/{aid}",
         "pdf": f"https://arxiv.org/pdf/{aid}",
-        "html": f"https://arxiv.org/html/{aid}",
+        "html": f"https://arxiv.org/html/{aid}" + (f"#{hid}" if hid else ""),
     }
     if page:
         rec["page"] = int(page)
+    if paragraph:
+        rec["paragraph"] = int(paragraph)
     if section:
         rec["section"] = str(section)
-    if html_id:
-        rec["html_id"] = html_id.lstrip("#")
+    if hid:
+        rec["html_id"] = hid
     if excerpt:
         rec["excerpt"] = re.sub(r"\s+", " ", excerpt).strip()
     return rec
@@ -124,6 +134,8 @@ def parse_arxiv_url(url: str) -> Optional[Dict[str, Any]]:
     html_id = None
     if "/html/" in url and "#" in url and not pm:
         frag = url.split("#", 1)[1]
+        # Drop text-fragment suffix if present (#id:~:text=…)
+        frag = frag.split(":~:", 1)[0]
         if frag and not frag.lower().startswith("page="):
             html_id = frag
     return make_arxiv_ref(aid, page=page, html_id=html_id)
@@ -153,28 +165,46 @@ def extract_references(text: str) -> List[Dict[str, str]]:
     found: List[Dict[str, str]] = []
     seen = set()
 
-    def _page_near(end: int) -> int | None:
-        tail = text[end : end + 48]
+    def _locator_near(end: int) -> tuple[int | None, int | None]:
+        """Parse `p.1 ¶3` / `p.1 para 3` / `page 1, paragraph 3` after an id."""
+        tail = text[end : end + 64]
         pm = re.match(
-            r"(?:v\d+)?(?:\s*[,;:]?\s*(?:#page=|p(?:age)?\.?\s*))(\d+)",
+            r"(?:v\d+)?"
+            r"(?:\s*[,;:]?\s*(?:#page=|p(?:age)?\.?\s*))(\d+)"
+            r"(?:\s*[,;:]?\s*(?:¶+|para(?:graph)?\.?\s*)(\d+))?",
             tail,
             re.I,
         )
-        return int(pm.group(1)) if pm else None
+        if not pm:
+            return None, None
+        page = int(pm.group(1))
+        para = int(pm.group(2)) if pm.group(2) else None
+        return page, para
 
-    def _add_arxiv(aid: str, page: int | None) -> None:
+    def _add_arxiv(
+        aid: str,
+        page: int | None,
+        paragraph: int | None = None,
+        html_id: str | None = None,
+    ) -> None:
         aid = normalize_arxiv_id(aid)
-        key = f"arxiv:{aid}"
-        rec = make_arxiv_ref(aid, page=page)
-        if key in seen:
-            # Prefer a more specific locator (PDF page) if we already stored abs.
-            for i, prev in enumerate(found):
-                if prev.get("kind") == "arxiv" and prev.get("id") == aid:
-                    if page and not prev.get("page"):
-                        found[i] = rec
-                    return
-            return
-        seen.add(key)
+        rec = make_arxiv_ref(aid, page=page, paragraph=paragraph, html_id=html_id)
+        new_place = (rec.get("page"), rec.get("paragraph"), rec.get("html_id"))
+
+        def _coarser(a, b) -> bool:
+            return all(x is None or x == y for x, y in zip(a, b))
+
+        for i, prev in enumerate(found):
+            if prev.get("kind") != "arxiv" or prev.get("id") != aid:
+                continue
+            old_place = (prev.get("page"), prev.get("paragraph"), prev.get("html_id"))
+            if old_place == new_place:
+                return
+            if _coarser(old_place, new_place):
+                found[i] = rec
+                return
+            if _coarser(new_place, old_place):
+                return
         found.append(rec)
 
     for m in re.finditer(r"https?://[^\s<>)\]\"']+", text):
@@ -190,13 +220,14 @@ def extract_references(text: str) -> List[Dict[str, str]]:
         ax = parse_arxiv_url(url)
         if ax:
             seen.add(url)
-            _add_arxiv(ax["id"], ax.get("page"))
+            _add_arxiv(ax["id"], ax.get("page"), ax.get("paragraph"), ax.get("html_id"))
             continue
         seen.add(url)
         found.append({"kind": "url", "id": url, "label": url, "url": url})
 
     for m in re.finditer(rf"arXiv[:\s]+{_ARXIV_CORE}", text, re.I):
-        _add_arxiv(m.group(1), _page_near(m.end()))
+        page, para = _locator_near(m.end())
+        _add_arxiv(m.group(1), page, para)
 
     for m in re.finditer(rf"\b{_ARXIV_CORE}\b", text):
         aid = normalize_arxiv_id(m.group(1))
@@ -205,7 +236,8 @@ def extract_references(text: str) -> List[Dict[str, str]]:
         except ValueError:
             continue
         if 1500 <= yymm <= 2999:
-            _add_arxiv(aid, _page_near(m.end()))
+            page, para = _locator_near(m.end())
+            _add_arxiv(aid, page, para)
 
     for m in re.finditer(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b", text):
         doi = m.group(1).rstrip(".")
@@ -229,9 +261,13 @@ def linkify_claim(text: str) -> str:
     for r in sorted(refs, key=lambda x: -len(x["id"])):
         if r["kind"] == "arxiv":
             labeled = f"[{r['label']}]({r['url']})"
+            loc = (
+                r"(?:\s*[,;:]?\s*(?:#page=|p(?:age)?\.?\s*)\d+"
+                r"(?:\s*[,;:]?\s*(?:¶+|para(?:graph)?\.?\s*)\d+)?)?"
+            )
             patterns = [
-                rf"arXiv[:\s]+{re.escape(r['id'])}(?:v\d+)?",
-                rf"\b{re.escape(r['id'])}(?:v\d+)?\b",
+                rf"arXiv[:\s]+{re.escape(r['id'])}(?:v\d+)?{loc}",
+                rf"\b{re.escape(r['id'])}(?:v\d+)?{loc}",
             ]
             for pat in patterns:
                 out2, n = re.subn(pat, labeled, out, count=1, flags=re.I)
