@@ -94,7 +94,7 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 | `atoms` | Ordered list of **strings or objects**; index is stable for edges |
 | `atoms[].text` | When object: the claim string (search/packet use this) |
 | `atoms[].constraint` | Optional constructor kind: `possibility` \| `impossibility` \| `fact` \| `decision` |
-| `atoms[].mentions` | Optional joins: `[{name, kind}]` where kind is `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. **Not** a second graph. |
+| `atoms[].mentions` | Joins the packing agent extracts onto the claim: `[{name, kind}]` with kind `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. **Not** a second graph. CLI: `--mention Name:kind` after `--atom`. |
 | `atoms[].refs` | Optional citations. **youtube_video**: `youtube_video_id`, `t` (seconds), `t_label`, `url` with `&t=` (original video). **arxiv**: `id`, `page` + `paragraph` (page 1, paragraph N) + `excerpt` (the quoted passage). `url` opens the original PDF at `#page=N` (works for every paper). `html` adds `#:~:text=` from the excerpt when present. DOI/URL locators can reuse `page`/`paragraph`/`excerpt` later. |
 | `atoms[].provenance` | **HOW it was made** — method, model, source, excerpt (required for mint) |
 | `atoms[].review.status` | `pending` \| `accepted` \| `edited` \| `rejected` |

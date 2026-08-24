@@ -36,7 +36,9 @@ Store: `$COHERENCE_ROOT` or `$PWD/.coherence`.
 ```bash
 coherence pack --title "My AI interests" --constraint fact \
   --atom "JEPA predicts in latent space rather than tokens." \
-  --atom "Packets are the share unit, not transcripts."
+  --mention "JEPA:concept" \
+  --atom "Packets are the share unit, not transcripts." \
+  --mention "packet:concept"
 coherence share --to alice --audience circle
 ```
 

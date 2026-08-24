@@ -1,8 +1,8 @@
 """Named-entity *joins* on atoms — not a second knowledge graph.
 
-Mentions and refs hang off a claim so a host can project them into its own
-entity store. Constructor-resilience does not own ontology, types-as-truth,
-or NER models.
+The packing agent extracts names the claim is about. Mentions and refs hang
+off that claim so a host can project them. This package does not own
+ontology, types-as-truth, or an NER model.
 """
 
 from __future__ import annotations
