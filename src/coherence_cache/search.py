@@ -117,16 +117,7 @@ def energy(x: List[int], Q: Dict[Pair, float]) -> float:
     return e
 
 
-def simulated_annealing(
-    n: int,
-    Q: Dict[Pair, float],
-    num_reads: int = 50,
-    num_sweeps: int = 800,
-    t0: float = 2.0,
-    t1: float = 0.01,
-    seed: int = 42,
-) -> List[Tuple[List[int], float]]:
-    rng = random.Random(seed)
+def _ising_tables(n: int, Q: Dict[Pair, float]):
     neighbors: List[List[Tuple[int, float]]] = [[] for _ in range(n)]
     linear = [0.0] * n
     for (i, j), q in Q.items():
@@ -135,31 +126,108 @@ def simulated_annealing(
         else:
             neighbors[i].append((j, q))
             neighbors[j].append((i, q))
+    return linear, neighbors
 
-    def delta_flip(x: List[int], k: int) -> float:
-        coupling = sum(q * x[j] for j, q in neighbors[k])
-        if x[k] == 0:
-            return linear[k] + coupling
-        return -(linear[k] + coupling)
 
-    results: List[Tuple[List[int], float]] = []
-    for _ in range(num_reads):
-        x = [rng.randint(0, 1) for _ in range(n)]
-        e = energy(x, Q)
-        if num_sweeps <= 1:
-            temps = [t1]
-        else:
-            log_ratio = math.log(t1 / t0) if t0 > 0 and t1 > 0 else -5.0
-            temps = [t0 * math.exp(log_ratio * s / (num_sweeps - 1)) for s in range(num_sweeps)]
-        for t in temps:
+def _delta_flip(x: List[int], k: int, linear, neighbors) -> float:
+    coupling = sum(q * x[j] for j, q in neighbors[k])
+    if x[k] == 0:
+        return linear[k] + coupling
+    return -(linear[k] + coupling)
+
+
+def _geometric_temps(num_sweeps: int, t0: float, t1: float) -> List[float]:
+    if num_sweeps <= 1:
+        return [t1]
+    log_ratio = math.log(t1 / t0) if t0 > 0 and t1 > 0 else -5.0
+    return [t0 * math.exp(log_ratio * s / (num_sweeps - 1)) for s in range(num_sweeps)]
+
+
+def _metropolis_run(
+    n: int,
+    Q: Dict[Pair, float],
+    temps: Sequence[float],
+    flips_per_temp: int,
+    rng: random.Random,
+    max_size: Optional[int] = None,
+) -> Tuple[List[int], float]:
+    linear, neighbors = _ising_tables(n, Q)
+    x = [rng.randint(0, 1) for _ in range(n)]
+    if max_size is not None:
+        # Random start may exceed the packet cap; drop extras.
+        ones = [i for i, b in enumerate(x) if b]
+        rng.shuffle(ones)
+        for i in ones[max_size:]:
+            x[i] = 0
+    e = energy(x, Q)
+    n_flips = n if flips_per_temp < 0 else max(1, flips_per_temp)
+    for t in temps:
+        t = max(float(t), 1e-12)
+        for _ in range(n_flips):
             k = rng.randrange(n)
-            d = delta_flip(x, k)
-            if d <= 0 or rng.random() < math.exp(-d / max(t, 1e-12)):
+            if x[k] == 0 and max_size is not None and sum(x) >= max_size:
+                continue
+            d = _delta_flip(x, k, linear, neighbors)
+            if d <= 0 or rng.random() < math.exp(-d / t):
                 x[k] = 1 - x[k]
                 e += d
-        results.append((x[:], e))
+    return x, e
+
+
+def simulated_annealing(
+    n: int,
+    Q: Dict[Pair, float],
+    num_reads: int = 50,
+    num_sweeps: int = 800,
+    t0: float = 2.0,
+    t1: float = 0.01,
+    seed: int = 42,
+    flips_per_temp: int = 1,
+    max_size: Optional[int] = None,
+) -> List[Tuple[List[int], float]]:
+    """Independent Metropolis chains with a geometric temperature schedule.
+
+    ``flips_per_temp=1`` is one proposal per T (legacy). ``-1`` does n
+    proposals per T (a sweep).
+    """
+    rng = random.Random(seed)
+    temps = _geometric_temps(num_sweeps, t0, t1)
+    results: List[Tuple[List[int], float]] = []
+    for i in range(num_reads):
+        chain_rng = random.Random(rng.randrange(1 << 30) + i)
+        x, e = _metropolis_run(
+            n, Q, temps, flips_per_temp, chain_rng, max_size=max_size
+        )
+        results.append((x, e))
     results.sort(key=lambda p: p[1])
     return results
+
+
+def metropolis(
+    n: int,
+    Q: Dict[Pair, float],
+    num_reads: int = 50,
+    steps: int | None = None,
+    t: float = 0.2,
+    seed: int = 42,
+    max_size: Optional[int] = None,
+) -> List[Tuple[List[int], float]]:
+    """Independent chains at fixed temperature (no annealing)."""
+    rng = random.Random(seed)
+    n_steps = steps if steps is not None else max(n * 200, 200)
+    temps = [t] * n_steps
+    results: List[Tuple[List[int], float]] = []
+    for i in range(num_reads):
+        chain_rng = random.Random(rng.randrange(1 << 30) + i)
+        x, e = _metropolis_run(
+            n, Q, temps, 1, chain_rng, max_size=max_size
+        )
+        results.append((x, e))
+    results.sort(key=lambda p: p[1])
+    return results
+
+
+SAMPLE_METHODS = ("sa-geo", "sa-sweep", "metropolis")
 
 
 def _normalize_consistency(
@@ -188,6 +256,8 @@ def find_resilient_constructors(
     coupling_scale: float = 1.5,
     redundancy_scale: float = 2.0,
     redundancy_threshold: float = 0.22,
+    method: str = "sa-sweep",
+    max_size: Optional[int] = None,
 ) -> List[Tuple[List[str], float]]:
     n = len(atoms)
     if n == 0:
@@ -202,7 +272,38 @@ def find_resilient_constructors(
         redundancy=red,
         redundancy_scale=redundancy_scale,
     )
-    runs = simulated_annealing(n, Q, num_reads=num_reads, num_sweeps=num_sweeps, seed=seed)
+    method = (method or "sa-sweep").lower().replace("_", "-")
+    if method == "sa-geo":
+        runs = simulated_annealing(
+            n,
+            Q,
+            num_reads=num_reads,
+            num_sweeps=num_sweeps,
+            seed=seed,
+            flips_per_temp=1,
+            max_size=max_size,
+        )
+    elif method == "sa-sweep":
+        runs = simulated_annealing(
+            n,
+            Q,
+            num_reads=num_reads,
+            num_sweeps=num_sweeps,
+            seed=seed,
+            flips_per_temp=-1,
+            max_size=max_size,
+        )
+    elif method == "metropolis":
+        runs = metropolis(
+            n,
+            Q,
+            num_reads=num_reads,
+            steps=max(n * num_sweeps, n),
+            seed=seed,
+            max_size=max_size,
+        )
+    else:
+        raise ValueError(f"unknown sample method {method!r}; use one of {SAMPLE_METHODS}")
     unique: List[Tuple[List[str], float]] = []
     seen = set()
     texts = [as_text(a) for a in atoms]
@@ -279,6 +380,11 @@ def main():
     parser.add_argument("--redundancy-threshold", type=float, default=0.22)
     parser.add_argument("--top", type=int, default=5)
     parser.add_argument("--greedy", action="store_true")
+    parser.add_argument(
+        "--method",
+        choices=["greedy", "sa-geo", "sa-sweep", "metropolis"],
+        default="sa-sweep",
+    )
     parser.add_argument("--max-size", type=int, default=None)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -287,7 +393,8 @@ def main():
     atoms = store.get("atoms", [])
     consistency = consistency_from_store(store)
 
-    if args.greedy:
+    method = "greedy" if args.greedy else args.method
+    if method == "greedy":
         selected, eng = greedy_resilient(
             atoms,
             consistency,
@@ -310,6 +417,8 @@ def main():
         seed=args.seed,
         redundancy_scale=args.redundancy_scale,
         redundancy_threshold=args.redundancy_threshold,
+        method=method,
+        max_size=args.max_size,
     )
     print(f"atoms={len(atoms)} edges={len(consistency)} unique_packets={len(packets)}")
     for rank, (selected, eng) in enumerate(packets[: args.top]):

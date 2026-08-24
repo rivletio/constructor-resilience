@@ -84,8 +84,8 @@ $COHERENCE_ROOT/          # default: ./.coherence
     share.json            # after `coherence share`
 ```
 
-Energy model: [docs/qubo-formulation.md](./docs/qubo-formulation.md).  
-Host contract: [docs/HOSTS.md](./docs/HOSTS.md).
+Packet search: greedy for `pack`; Monte Carlo via `coherence search --method sa-sweep|sa-geo|metropolis`.  
+Energy model: [docs/qubo-formulation.md](./docs/qubo-formulation.md). Host contract: [docs/HOSTS.md](./docs/HOSTS.md).
 
 ## Hosts
 

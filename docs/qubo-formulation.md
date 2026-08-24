@@ -29,13 +29,22 @@ E(x) = \sum_i h_i x_i + \sum_{i<j} J_{ij} x_i x_j
 
 ## Solvers
 
-Classical simulated annealing (stdlib) or greedy constructive search minimize \(E\).
-Same QUBO can be handed to hybrid/quantum annealers offline.
+Same QUBO, several classical Monte Carlo chains (stdlib `random`):
+
+| `--method` | What |
+|------------|------|
+| `greedy` | Constructive baseline (what `pack` / `packet --rebuild` use) |
+| `sa-sweep` | Geometric annealing; **n** Metropolis flips per temperature (default `search`) |
+| `sa-geo` | Same schedule, **one** flip per temperature (legacy) |
+| `metropolis` | Fixed temperature, no annealing |
+
+`max_size` is a hard cap on selected atoms (same as greedy). Unconstrained, coverage (`h_i = -1`) turns almost everything on — redundancy cannot beat that.
 
 ## CLI
 
 ```bash
 coherence search --greedy --max-size 6
-coherence search --redundancy-scale 2 --redundancy-threshold 0.22
+coherence search --method sa-sweep --reads 40 --sweeps 400
+coherence search --method metropolis
 coherence search --redundancy-scale 0   # disable redundancy term
 ```

@@ -1048,7 +1048,8 @@ def cmd_search(args):
     write = not getattr(args, "no_write", False)
     topic_id = active.get("id") or active.get("topic_id") or Path(path).parent.name
 
-    if args.greedy:
+    method = "greedy" if args.greedy else (getattr(args, "method", None) or "sa-sweep")
+    if method == "greedy":
         selected, eng = mod.greedy_resilient(
             texts,
             cons,
@@ -1077,9 +1078,11 @@ def cmd_search(args):
         num_sweeps=args.sweeps,
         redundancy_scale=red_scale,
         redundancy_threshold=red_thr,
+        method=method,
+        max_size=args.max_size,
     )
     top = ranked[: max(1, args.top)]
-    print(f"SA packets (showing {len(top)} of {len(ranked)} unique)")
+    print(f"{method} packets (showing {len(top)} of {len(ranked)} unique)")
     for rank, (selected, eng) in enumerate(top):
         print(f"\n#{rank}  E={eng:.4f}  size={len(selected)}")
         for a in selected:
@@ -1087,7 +1090,7 @@ def cmd_search(args):
     if write and top:
         selected, eng = top[0]
         doc = build_packet_doc(
-            topic_id, atoms, selected, eng, "sa",
+            topic_id, atoms, selected, eng, method,
             None, red_scale,
         )
         out = write_packet(Path(path), doc)
@@ -2083,7 +2086,13 @@ def main(argv=None):
                           help="Penalty scale for co-selecting lexically similar atoms")
     p_search.add_argument("--redundancy-threshold", type=float, default=0.22,
                           help="Min Jaccard similarity to count as redundant")
-    p_search.add_argument("--greedy", action="store_true")
+    p_search.add_argument("--greedy", action="store_true", help="Alias for --method greedy")
+    p_search.add_argument(
+        "--method",
+        choices=["greedy", "sa-geo", "sa-sweep", "metropolis"],
+        default="sa-sweep",
+        help="Packet sampler (default sa-sweep). pack/packet stay greedy.",
+    )
     p_search.add_argument("--max-size", type=int, default=None)
     p_search.add_argument("--no-write", action="store_true", help="Do not write packet.json")
     p_search.set_defaults(func=cmd_search)

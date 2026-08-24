@@ -1,34 +1,50 @@
-"""Golden tests for resilience search + intersection."""
+"""Golden tests for resilience search, Monte Carlo samplers, intersection."""
 
 from __future__ import annotations
 
+import math
+
 from coherence_cache.intersection import intersection_packet
-from coherence_cache.search import greedy_resilient, lexical_similarity
+from coherence_cache.search import (
+    SAMPLE_METHODS,
+    build_qubo,
+    energy,
+    find_resilient_constructors,
+    greedy_resilient,
+    lexical_similarity,
+)
+
+# Near-dup pair is (1, 2). Support cluster is 0 with 1/3/4.
+DIVERSITY_ATOMS = [
+    "Share interest surfaces not whole stores.",
+    "Packets maximize support and minimize redundancy.",
+    "Packets maximize support and minimize redundancy almost same.",
+    "Public creators publish intentional atoms.",
+    "Inner circle requires intentional promote.",
+]
+DIVERSITY_CONS = {
+    (0, 1): 0.8,
+    (0, 3): 0.7,
+    (0, 4): 0.9,
+    (1, 2): 0.95,
+    (1, 3): 0.6,
+    (3, 4): 0.5,
+}
 
 
 def test_greedy_packet_prefers_diverse_support():
-    atoms = [
-        "Share interest surfaces not whole stores.",
-        "Packets maximize support and minimize redundancy.",
-        "Packets maximize support and minimize redundancy almost same.",  # near-dup
-        "Public creators publish intentional atoms.",
-        "Inner circle requires intentional promote.",
-    ]
-    consistency = {
-        (0, 1): 0.8,
-        (0, 3): 0.7,
-        (0, 4): 0.9,
-        (1, 2): 0.95,  # paraphrase pair
-        (1, 3): 0.6,
-        (3, 4): 0.5,
-    }
     selected, eng = greedy_resilient(
-        atoms, consistency, max_size=3, redundancy_scale=2.0, redundancy_threshold=0.2
+        DIVERSITY_ATOMS,
+        DIVERSITY_CONS,
+        max_size=3,
+        redundancy_scale=2.0,
+        redundancy_threshold=0.2,
     )
     assert 1 <= len(selected) <= 3
-    # Should not need both near-duplicates in a size-3 packet always, but
-    # energy must be finite and selection non-empty.
-    assert eng <= 0.0 or len(selected) >= 1
+    assert math.isfinite(eng)
+    assert not (
+        DIVERSITY_ATOMS[1] in selected and DIVERSITY_ATOMS[2] in selected
+    )
 
 
 def test_lexical_similarity_symmetric():
@@ -99,3 +115,77 @@ def test_intersection_structured_atoms_stay_text():
     doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.05)
     assert doc["atoms"]
     assert all(isinstance(a, str) for a in doc["atoms"])
+
+
+def test_qubo_energy_two_spins():
+    Q = {(0, 0): -1.0, (1, 1): -1.0, (0, 1): 2.0}
+    assert energy([0, 0], Q) == 0.0
+    assert energy([1, 0], Q) == -1.0
+    assert energy([0, 1], Q) == -1.0
+    assert energy([1, 1], Q) == 0.0
+    built = build_qubo(2, {(0, 1): -1.0}, select_penalty=-1.0, coupling_scale=1.5)
+    # J = -1.5 * (-1) = +1.5 — conflict raises energy when both on
+    assert built[(0, 0)] == -1.0
+    assert abs(built[(0, 1)] - 1.5) < 1e-12
+
+
+def test_greedy_empty_and_singleton():
+    assert greedy_resilient([], {}) == ([], 0.0)
+    selected, eng = greedy_resilient(["Only claim."], {})
+    assert selected == ["Only claim."]
+    assert eng == -1.0
+
+
+def test_greedy_will_not_pair_direct_conflict():
+    atoms = ["Task T is possible.", "Task T is impossible."]
+    selected, _eng = greedy_resilient(atoms, {(0, 1): -1.0}, max_size=2)
+    assert len(selected) == 1
+
+
+def test_sa_seed_reproducible():
+    kwargs = dict(
+        num_reads=8,
+        num_sweeps=25,
+        seed=7,
+        method="sa-sweep",
+        redundancy_scale=2.0,
+        redundancy_threshold=0.2,
+    )
+    a = find_resilient_constructors(DIVERSITY_ATOMS, DIVERSITY_CONS, **kwargs)
+    b = find_resilient_constructors(DIVERSITY_ATOMS, DIVERSITY_CONS, **kwargs)
+    assert a[0] == b[0]
+
+
+def test_monte_carlo_methods_avoid_paraphrase_pair():
+    energies = {}
+    for method in SAMPLE_METHODS:
+        packets = find_resilient_constructors(
+            DIVERSITY_ATOMS,
+            DIVERSITY_CONS,
+            num_reads=16,
+            num_sweeps=40,
+            seed=0,
+            method=method,
+            redundancy_scale=2.0,
+            redundancy_threshold=0.2,
+            max_size=3,
+        )
+        top, eng = packets[0]
+        energies[method] = eng
+        assert packets[0][1] == min(p[1] for p in packets)
+        assert len(top) <= 3, method
+        # One-flip-per-T (sa-geo) mixes less; sweep/metropolis should drop the paraphrase pair.
+        if method != "sa-geo":
+            assert not (
+                DIVERSITY_ATOMS[1] in top and DIVERSITY_ATOMS[2] in top
+            ), method
+    assert energies["sa-sweep"] <= energies["sa-geo"] + 1e-9
+
+
+def test_unknown_sample_method_errors():
+    try:
+        find_resilient_constructors(["a", "b"], {(0, 1): 0.5}, method="gibbs")
+    except ValueError as e:
+        assert "gibbs" in str(e)
+    else:
+        raise AssertionError("expected ValueError")
