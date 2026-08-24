@@ -116,6 +116,43 @@ def test_pack_from_empty_store_writes_packet(tmp_path, capsys):
     assert "Packets are the share unit" in packet["atoms"][0]
 
 
+def test_pack_atoms_flags_no_json_file(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "No file",
+        "--constraint",
+        "fact",
+        "--atom",
+        "Packets are the share unit, not transcripts.",
+        "--atom",
+        "Mentions hang on a claim, not a second graph.",
+    )
+    out = capsys.readouterr().out
+    assert "packed no-file" in out
+    topic = root / "topics" / "no-file"
+    store = _load(topic / "atoms.json")
+    assert len(store["atoms"]) == 2
+    assert store["atoms"][0]["constraint"] == "fact"
+    assert store["atoms"][0]["review"]["status"] == "accepted"
+    # re-pack same claims: skip duplicates, keep packet
+    capsys.readouterr()
+    _run(
+        root,
+        "pack",
+        "--title",
+        "No file",
+        "--atom",
+        "Packets are the share unit, not transcripts.",
+    )
+    out = capsys.readouterr().out
+    assert "duplicate" in out.lower()
+    store2 = _load(topic / "atoms.json")
+    assert len(store2["atoms"]) == 2
+
+
 def test_cache_miss_points_at_ingest(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(root, "cache", "anything")

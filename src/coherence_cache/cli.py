@@ -128,7 +128,7 @@ def cmd_status(_args):
     else:
         print("Active topic: (none)")
         if not meta.get("topics"):
-            print('  Pack claims:  coherence pack --title "Theme" --json claims.json')
+            print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')
         else:
             print("  Zoom in:      coherence use <topic-id>")
 
@@ -240,7 +240,7 @@ def refresh_topic_counts(topic_id: str):
 def _no_topic_exit() -> None:
     raise SystemExit(
         "No active topic.\n"
-        '  Pack claims:  coherence pack --title "Theme" --json claims.json\n'
+        '  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."\n'
         "  Or zoom in:   coherence use <topic-id>"
     )
 
@@ -356,24 +356,47 @@ def cmd_add_atom(args):
         print(f"  auto-score edges involving new atom: {linked}")
 
 
-def cmd_ingest(args):
-    """Load claims JSON written by the session (no extra model)."""
-    raw = None
-    if args.json:
-        raw = Path(args.json).expanduser().read_text(encoding="utf-8")
-    elif args.text:
-        raw = args.text
-    else:
-        raw = sys.stdin.read()
-    if not (raw or "").strip():
-        raise SystemExit("ingest requires --json PATH, --text JSON, or stdin")
-    try:
-        payload = json.loads(raw)
-        items = parse_ingest_payload(payload)
-    except (json.JSONDecodeError, ValueError) as e:
-        raise SystemExit(f"ingest JSON: {e}") from e
+def _items_from_args(args) -> list:
+    """Collect claims from --atom, --json, --text, or non-tty stdin. Never block on a TTY."""
+    items: list = []
+    for raw_atom in getattr(args, "atom", None) or []:
+        text = (raw_atom or "").strip()
+        if text:
+            items.append(text)
+    blob = None
+    if getattr(args, "json", None):
+        blob = Path(args.json).expanduser().read_text(encoding="utf-8")
+    elif getattr(args, "text", None):
+        blob = args.text
+    elif not items and not sys.stdin.isatty():
+        blob = sys.stdin.read()
+    if blob and str(blob).strip():
+        try:
+            items.extend(parse_ingest_payload(json.loads(blob)))
+        except (json.JSONDecodeError, ValueError) as e:
+            raise SystemExit(f"ingest JSON: {e}") from e
     if not items:
-        raise SystemExit("ingest: no atoms in payload")
+        raise SystemExit(
+            'Need claims:  --atom "Durable claim."  (repeatable)\n'
+            "           or --json claims.json  or --text JSON"
+        )
+    constraint = getattr(args, "constraint", None)
+    if constraint:
+        out = []
+        for item in items:
+            if isinstance(item, str):
+                out.append({"text": item, "constraint": constraint})
+            else:
+                rec = dict(item)
+                rec.setdefault("constraint", constraint)
+                out.append(rec)
+        return out
+    return items
+
+
+def cmd_ingest(args):
+    """Load claims written by the session (no extra model)."""
+    items = _items_from_args(args)
 
     if getattr(args, "title", None):
         create_topic(title=args.title, topic_id=args.topic, use=True, exist_ok=True)
@@ -382,7 +405,9 @@ def cmd_ingest(args):
 
     active, path, store = load_active_store()
     status = REVIEW_PENDING if getattr(args, "pending", False) else REVIEW_ACCEPTED
+    seen = {atom_text(a).lower() for a in (store.get("atoms") or [])}
     added = 0
+    skipped = 0
     for item in items:
         try:
             atom = coerce_atom(
@@ -393,7 +418,14 @@ def cmd_ingest(args):
             )
         except ValueError as e:
             print(f"  skip: {e}")
+            skipped += 1
             continue
+        key = atom_text(atom).lower()
+        if key in seen:
+            print(f"  skip (duplicate): {atom_text(atom)}")
+            skipped += 1
+            continue
+        seen.add(key)
         idx, _cons = _append_scored_atom(store, atom, auto_score=bool(args.auto_score))
         added += 1
         mcount = len(atom.get("mentions") or []) if isinstance(atom, dict) else 0
@@ -407,6 +439,7 @@ def cmd_ingest(args):
     refresh_topic_counts(active["topic_id"])
     print(
         f"Ingested {added} atom(s) → {active['topic_id']} [{status}]"
+        + (f" skipped={skipped}" if skipped else "")
         + (" (auto-scored)" if args.auto_score else "")
     )
     if added and not getattr(args, "no_packet", False):
@@ -420,7 +453,9 @@ def cmd_ingest(args):
 def cmd_pack(args):
     """Ingest claims and print the resume packet (the 'pack this session' verb)."""
     if not getattr(args, "title", None) and not getattr(args, "topic", None) and not get_active():
-        raise SystemExit('pack needs --title "Theme" (or an active topic)')
+        raise SystemExit(
+            'pack needs --title "Theme" (or an active topic) and at least one --atom'
+        )
     if not getattr(args, "auto_score", False):
         args.auto_score = True
     cmd_ingest(args)
@@ -1205,7 +1240,7 @@ def cmd_cache(args):
     ranked.sort(reverse=True)
     if not ranked:
         print("CACHE MISS — no matching topics.")
-        print('  Pack claims:  coherence pack --title "Theme" --json claims.json')
+        print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')
         return
 
     mod = resilience_search
@@ -1819,8 +1854,19 @@ def main(argv=None):
         "ingest",
         help="Load claims JSON into the active topic (no extra model)",
     )
+    p_ingest.add_argument(
+        "--atom",
+        action="append",
+        default=[],
+        help="Durable claim (repeatable). Prefer this over a JSON file.",
+    )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument("--text", help="Inline JSON string")
+    p_ingest.add_argument(
+        "--constraint",
+        choices=["possibility", "impossibility", "fact", "decision"],
+        help="Default constraint for --atom strings",
+    )
     p_ingest.add_argument("--title", help="Create/use a topic with this title")
     p_ingest.add_argument("--topic", help="Topic id to use")
     p_ingest.add_argument("--source", default="ingest", help="Provenance source label")
@@ -1843,8 +1889,19 @@ def main(argv=None):
         "pack",
         help="Pack claims into a topic and write the resume packet",
     )
+    p_pack.add_argument(
+        "--atom",
+        action="append",
+        default=[],
+        help="Durable claim (repeatable)",
+    )
     p_pack.add_argument("--json", help="Path to claims JSON")
     p_pack.add_argument("--text", help="Inline claims JSON")
+    p_pack.add_argument(
+        "--constraint",
+        choices=["possibility", "impossibility", "fact", "decision"],
+        help="Default constraint for --atom strings",
+    )
     p_pack.add_argument("--title", help="Topic title (creates the topic if needed)")
     p_pack.add_argument("--topic", help="Topic id to use")
     p_pack.add_argument("--source", default="ingest")

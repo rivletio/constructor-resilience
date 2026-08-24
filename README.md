@@ -34,21 +34,13 @@ Store: `$COHERENCE_ROOT` or `$PWD/.coherence`.
 ## Quick start
 
 ```bash
-coherence pack --title "My AI interests" --json ./claims.json
+coherence pack --title "My AI interests" --constraint fact \
+  --atom "JEPA predicts in latent space rather than tokens." \
+  --atom "Packets are the share unit, not transcripts."
 coherence share --to alice --audience circle
 ```
 
-Or one claim at a time:
-
-```bash
-coherence create --title "My AI interests" --use
-coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score
-coherence packet --rebuild
-```
-
-```json
-{"atoms": [{"text": "JEPA predicts in latent space rather than tokens.", "constraint": "fact"}]}
-```
+JSON file still works (`--json claims.json`) when you need mentions/refs on each claim.
 
 Wire format: [SPEC.md](./SPEC.md). Human walkthrough: [docs/USER_MANUAL.md](./docs/USER_MANUAL.md).
 

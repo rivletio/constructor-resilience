@@ -30,8 +30,9 @@ Read the packet first. If CACHE MISS, pack (next). Only chase what is not alread
 **Pack.** The agent writes claims from this conversation (no extra model):
 
 ```bash
-coherence pack --title "your theme" --json ./claims.json
-coherence add-atom "Durable claim." --constraint fact --auto-score
+coherence pack --title "your theme" --constraint fact \
+  --atom "Durable claim." \
+  --atom "Second durable claim."
 ```
 
 Atom JSON shape is in [SPEC.md](../SPEC.md). `pack` keeps claims; MLX `mint` starts pending. Back out anything that does not actually constrain a possibility or impossibility.
