@@ -142,6 +142,52 @@ def make_arxiv_ref(
     return rec
 
 
+def normalize_ref(rec: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill locator fields (url, label, pdf/html) from a partial ref."""
+    if not isinstance(rec, dict):
+        return rec
+    kind = rec.get("kind")
+    url = rec.get("url") or ""
+    if kind == "arxiv" or rec.get("id") and re.match(rf"^{_ARXIV_CORE}$", str(rec.get("id") or "")):
+        aid = rec.get("id")
+        if not aid:
+            parsed = parse_arxiv_url(url)
+            if parsed:
+                aid = parsed.get("id")
+        if aid:
+            base = make_arxiv_ref(
+                aid,
+                page=rec.get("page"),
+                paragraph=rec.get("paragraph"),
+                section=rec.get("section"),
+                excerpt=rec.get("excerpt"),
+                html_id=rec.get("html_id"),
+            )
+            out = dict(rec)
+            out.update(base)
+            return out
+    if kind == "youtube_video" or rec.get("youtube_video_id"):
+        parsed = parse_youtube_url(url) if url else None
+        vid = rec.get("youtube_video_id") or rec.get("id") or (parsed or {}).get("youtube_video_id")
+        if vid:
+            t = rec.get("t")
+            if t is None and parsed:
+                t = parsed.get("t")
+            t = parse_timestamp(t) if t is not None and not isinstance(t, int) else t
+            out = dict(rec)
+            out["kind"] = "youtube_video"
+            out["id"] = vid
+            out["youtube_video_id"] = vid
+            out["url"] = youtube_watch_url(vid, t)
+            if t is not None:
+                out["t"] = int(t)
+                out["t_label"] = timestamp_label(int(t))
+            if not out.get("label"):
+                out["label"] = f"YouTube {vid}" + (f" @ {out['t_label']}" if t is not None else "")
+            return out
+    return rec
+
+
 def parse_arxiv_url(url: str) -> Optional[Dict[str, Any]]:
     m = re.search(
         rf"arxiv\.org/(?:abs|pdf|html)/{_ARXIV_CORE}",

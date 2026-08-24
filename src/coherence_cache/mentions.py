@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from .refs_util import extract_references
+from .refs_util import extract_references, normalize_ref
 
 VALID_CONSTRAINT = frozenset({"possibility", "impossibility", "fact", "decision"})
 VALID_MENTION_KIND = frozenset(
@@ -122,5 +122,5 @@ def mentions_from_atoms(atoms: Iterable) -> list[dict]:
 
 def refs_for_text(text: str, refs: list | None = None) -> list[dict]:
     if refs is not None:
-        return list(refs)
+        return [normalize_ref(r) if isinstance(r, dict) else r for r in refs]
     return extract_references(text)

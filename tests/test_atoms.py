@@ -93,6 +93,27 @@ def test_make_atom_constraint_mentions_refs():
     assert "url" in kinds or "arxiv" in kinds
 
 
+def test_make_atom_fills_arxiv_locator_url():
+    a = make_atom(
+        "The Transformer dispenses with recurrence and convolutions.",
+        constraint="fact",
+        refs=[
+            {
+                "kind": "arxiv",
+                "id": "1706.03762",
+                "page": 1,
+                "paragraph": 1,
+                "excerpt": "We propose a new simple network architecture, the Transformer",
+            }
+        ],
+    )
+    r = a["refs"][0]
+    assert r["url"] == "https://arxiv.org/pdf/1706.03762#page=1"
+    assert r["paragraph"] == 1
+    assert r["html"].startswith("https://arxiv.org/html/1706.03762#:~:text=")
+    assert "We propose a new simple network architecture" in r["excerpt"]
+
+
 def test_make_atom_rejects_bad_constraint():
     with pytest.raises(ValueError, match="constraint"):
         make_atom("A durable claim about packets.", constraint="vibes")
