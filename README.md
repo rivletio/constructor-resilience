@@ -1,107 +1,77 @@
 # constructor-resilience
 
-**Open method for what we share.**  
-Compress durable knowledge into **atoms** and **resilient packets**. Browse **interest intersections** — without dumping whole transcripts or lives.
+Turn a long session into a handful of **durable claims** (*atoms*) and a small **packet** you can resume from or hand to another agent.
 
-Compatible with the classical web (URLs, markdown, RSS projections). Hosts enforce circle policy: public → circles → inner personal.
+You don’t share the transcript. You share what you chose to keep.
 
-> We are reinventing *what* we share — a new share primitive with optional bridges to the old internet.
+| Word | Meaning |
+|------|---------|
+| **Atom** | One stand-alone claim worth injecting later |
+| **Packet** | A small, non-redundant set of atoms for this topic |
+| **Topic** | A named collection of atoms |
+| **Share** | An intentional file (`share.json`) — never ambient |
+| **Mention / ref** | A name or citation attached to a claim, not a second graph |
 
-## Core ideas
-
-| Concept | Meaning |
-|---------|---------|
-| **Atom** | A durable claim worth carrying forward |
-| **Consistency** | Support / conflict edges between atoms ∈ [-1, 1] |
-| **Packet** | Small set maximizing coverage + support − redundancy |
-| **Interest surface** | Topics you *choose* to show (not everything you know) |
-| **Intersection** | Live overlap of two surfaces — browse with dials |
-
-**Use case:** You don’t share everything. You share what you’re interested in.  
-You browse the **intersection** of your surface with a friend’s — or a public creator’s published atoms (e.g. Lex Fridman-style public atom feed) — and reshape that overlap in realtime.
-
-## Install
-
-**As an agent skill** (Claude, Grok, Codex, Cursor):
+## Install (skill)
 
 ```bash
 npx skills add rivletio/constructor-resilience-skill
 ```
 
-Or clone and run `./install.sh` from [`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) — that links the skill and puts `coherence` on PATH. First `bin/coherence` bootstraps the CLI if it is missing.
+Then tell the agent: *pack this session*.
 
-Then tell the agent: *pack this session* / *digest this into claims*.
+Or clone [`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) and run `./install.sh` (links the skill and puts `coherence` on PATH). If `coherence` is missing, `bin/coherence` next to `SKILL.md` installs it.
 
-**Python package:**
+## Install (Python)
 
 ```bash
-cd constructor-resilience
 pip install -e ".[dev]"
-# optional graph PNG:
-pip install -e ".[viz]"
+# optional graph PNG:  pip install -e ".[viz]"
 ```
+
+Store: `$COHERENCE_ROOT` or `$PWD/.coherence`.
 
 ## Quick start
 
 ```bash
-export COHERENCE_ROOT=./.coherence   # or pass --root
-coherence status                     # creates empty meta-store on first run
+coherence status
 coherence create --title "My AI interests" --use
-coherence add-atom "I care about world models and non-generative prediction." --auto-score --accepted
-coherence add-atom "JEPA predicts in latent space rather than tokens." --constraint possibility --auto-score --accepted
+coherence add-atom "JEPA predicts in latent space rather than tokens." --auto-score --accepted
 coherence search --greedy --max-size 6
-coherence packet
-coherence share --to alice --audience circle   # → topics/<id>/share.json
+coherence share --to alice --audience circle
 ```
 
-Host-model mint (the default agent path — no MLX):
+The agent path (no extra model): write claims, then ingest.
 
 ```bash
 coherence ingest --json ./claims.json --title "World models" --auto-score
-# claims.json: {"atoms": [{"text": "…", "constraint": "fact", "mentions": [{"name": "JEPA", "kind": "concept"}]}]}
 ```
 
-### Mint → review → eval (local MLX)
+```json
+{"atoms": [{"text": "JEPA predicts in latent space rather than tokens.", "constraint": "fact"}]}
+```
 
-Default model: **`mlx-community/Qwen3-8B-4bit`** (Qwen3 8B on Apple Silicon).
+Wire format: [SPEC.md](./SPEC.md). Human walkthrough: [docs/USER_MANUAL.md](./docs/USER_MANUAL.md).
+
+### Optional: local MLX (Apple Silicon)
 
 ```bash
-# one-time download / warm
 coherence ensure-model
-
-# HOW we make atoms: local mint with provenance (status=pending)
 coherence mint --file ./notes.md --theme "world models" --ensure-model --auto-score
-
-# Pre-human critique (proposals; --apply auto-accept/reject on confidence+grounding)
 coherence critique --source-file ./notes.md --apply
-
-# Slick HTML reviewer — accept / edit / reject (shows critique chips)
-coherence review --serve   # http://127.0.0.1:8765
-
-# Headless back-out (ill-defined, or claimed possibility/impossibility failed)
+coherence review --serve          # http://127.0.0.1:8765
 coherence reject 3 --reason "claimed impossibility does not hold"
-# alias: coherence backout 3 --reason "…"
-
-# How well can the store answer arbitrary questions? (query-aware packets)
-coherence eval \
-  --query "What is JEPA?" \
-  --query "How does Y relate to Z?" \
-  --ensure-model
-# → topics/<id>/eval_report.json
-# Expect: on-topic ✓, off-topic INSUFFICIENT. Use --fixed-packet to stress one global packet.
+coherence eval --query "What is JEPA?" --ensure-model
 ```
 
-### Interest intersection
+### Overlap with someone else’s surface
 
 ```bash
-coherence create --title "My physics" --use
-# ... add atoms ...
-coherence create --title "Lex public"   # their published surface
-# ... import or add their public atoms ...
-coherence intersect my-physics lex-public --query consciousness --max-size 8
+coherence import ./their-atoms.json --title "Lex public" --use
+coherence intersect my-ai-interests lex-public --query consciousness --max-size 8
 ```
 
-### Library API
+### Library
 
 ```python
 from coherence_cache.search import greedy_resilient
@@ -114,27 +84,24 @@ packet = intersection_packet(my_store, their_store, max_size=8, seed_query="AI")
 ## Layout
 
 ```
-$COHERENCE_ROOT/
+$COHERENCE_ROOT/          # default: ./.coherence
   meta.json
   active.json
-  topics/<id>/atoms.json
-  topics/<id>/packet.json
+  topics/<id>/
+    atoms.json
+    packet.json
+    share.json            # after `coherence share`
 ```
 
-See [SPEC.md](./SPEC.md) for wire formats.  
-See [docs/HOSTS.md](./docs/HOSTS.md) for adapters.  
-See [docs/qubo-formulation.md](./docs/qubo-formulation.md) for the energy model.
+Energy model: [docs/qubo-formulation.md](./docs/qubo-formulation.md).  
+Host contract: [docs/HOSTS.md](./docs/HOSTS.md).
 
 ## Hosts
 
-| Host | Role |
-|------|------|
-| **CLI** | Reference |
-| **Agent skill** | Claude, Grok, Codex, Cursor — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) (`npx skills add` or `./install.sh`). `hosts/grok-skill/` is a pointer. |
-
-Other products can speak the same packets. Circle policy belongs to the host.
+The **CLI** is the reference. The **agent skill** is the usual install:
+[`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill).
+Circle policy belongs to the host; this repo is the method.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).  
-This repo is the open compression + intersection method.
+MIT — see [LICENSE](./LICENSE).

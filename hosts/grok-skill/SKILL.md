@@ -1,15 +1,19 @@
 ---
 name: constructor-resilience
 description: >
-  Pointer to the harness-agnostic agent skill. Use the canonical repo
-  rivletio/constructor-resilience-skill for Claude Code, Grok, Codex, and Cursor.
+  Pointer. Canonical skill: rivletio/constructor-resilience-skill
+  (Claude, Grok, Codex, Cursor).
 ---
 
 # Constructor Resilience (agent skill)
 
-Canonical skill (Claude, Grok, Codex, Cursor):
+Install from the skill repo — this directory is not the source of truth.
 
-**https://github.com/rivletio/constructor-resilience-skill**
+```bash
+npx skills add rivletio/constructor-resilience-skill
+```
+
+Or:
 
 ```bash
 git clone https://github.com/rivletio/constructor-resilience-skill.git
@@ -17,4 +21,4 @@ cd constructor-resilience-skill
 ./install.sh
 ```
 
-This host directory is a pointer. Do not treat it as the skill source of truth.
+Then: *pack this session*.

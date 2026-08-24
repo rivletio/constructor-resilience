@@ -1,4 +1,4 @@
-"""Host-model ingest, share envelope, and import."""
+"""Ingest, share envelope, and import."""
 
 from __future__ import annotations
 

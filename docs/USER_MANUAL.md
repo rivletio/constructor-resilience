@@ -1,93 +1,42 @@
 # Constructor Resilience — User Manual
 
-Compress durable claims from a long thread into **atoms** and a **resilient packet**, so the same agent, a later session, or another agent can resume without the transcript.
+Pack a long thread into **atoms** (durable claims) and a **packet** (a small set to resume from), so the next session or another agent does not need the transcript.
 
-This is machinery for multi-session and multi-agent work, not a general note-taking app.
+This is for multi-session and multi-agent work, not a general notes app.
 
-**Shareable units:** `topics/<id>/atoms.json` + `packet.json`, or `coherence share` → `share.json`.
+**What you hand off:** `topics/<id>/atoms.json` + `packet.json`, or `coherence share` → `share.json`.
 
----
-
-## Mental model
-
-```
-Session / source text
-        │  ingest or add-atom (host model by default)
-        ▼
-┌───────────────────┐
-│  Topic store      │  atoms + pairwise consistency
-│  topics/<id>/     │  optional constraint, mentions, refs
-└─────────┬─────────┘
-          │ resilience search
-          ▼
-┌───────────────────┐
-│  Resilient packet │  small, consistent, low-redundancy set
-└─────────┬─────────┘
-          │ share / import / intersect
-          ▼
-   Next session, other agent, or another surface
-```
-
-| Term | Meaning |
+| Word | Meaning |
 |------|---------|
-| **Atom** | One durable claim. Constrains a possibility, impossibility, fact, or decision. |
-| **Mentions / refs** | Joins onto the claim (names, citations). Not a second graph. |
-| **Consistency** | Pairwise support/conflict in `[-1, 1]`. |
-| **Packet** | Subset maximizing coverage + support − redundancy. |
-| **Share** | Intentional envelope: packet + audience + forward grant. Never ambient. |
+| **Atom** | One stand-alone claim. Constrains a possibility, impossibility, fact, or decision. |
+| **Mention / ref** | A name or citation on that claim — not a second graph. |
+| **Consistency** | Pairwise support or conflict, `[-1, 1]`. |
+| **Packet** | A small subset: coverage + support − redundancy. |
+| **Share** | An intentional file with audience and forward grant. Never ambient. |
 
----
-
-## Persistence
-
-The cache is **file-backed** at `$COHERENCE_ROOT` or `$PWD/.coherence`.
-
-| What | Survives a new chat? |
-|------|----------------------|
-| Topic files on disk | **Yes**, same workspace |
-| Skill installation | **Yes** (`~/.grok/skills/`, `~/.claude/skills/`, …) |
-| Chat transcript | **No** |
-
----
+The cache is files on disk: `$COHERENCE_ROOT` or `$PWD/.coherence`. The chat log is not.
 
 ## Workflow
 
-### Start of a session
+**Start.** Load what you already claimed:
 
 ```bash
 coherence cache "your theme"
 # or: coherence use <topic-id>
 ```
 
-Load the **packet** first. Only chase what is not already claimed.
+Read the packet first. Only chase what is not already there.
 
-### Digest (default — no extra model)
-
-The agent writes claims from *this conversation*:
+**Digest.** The agent writes claims from this conversation (no extra model):
 
 ```bash
 coherence ingest --json ./claims.json --auto-score
-# or one at a time:
 coherence add-atom "Durable claim." --constraint fact --auto-score
 ```
 
-`claims.json` shape:
+Atom JSON shape is in [SPEC.md](../SPEC.md). New atoms are `pending` unless `--accepted`. Back out anything that does not actually constrain a possibility or impossibility.
 
-```json
-{
-  "atoms": [
-    {
-      "text": "One stand-alone sentence worth injecting later.",
-      "constraint": "fact",
-      "mentions": [{"name": "JEPA", "kind": "concept"}]
-    }
-  ]
-}
-```
-
-Minted/ingested atoms start `pending` unless `--accepted`. Review, then back out anything that does not actually constrain a possibility or impossibility.
-
-### Packet / handoff
+**Handoff.**
 
 ```bash
 coherence search --greedy --max-size 6
@@ -95,44 +44,32 @@ coherence packet --rebuild
 coherence share --to alice --audience circle --forward none
 ```
 
-### Import a surface
+**Import someone else’s surface.**
 
 ```bash
 coherence import ./their-atoms.json --title "Lex public" --use
 coherence intersect my-ai-interests lex-public --query consciousness
 ```
 
-### Optional local MLX (Apple Silicon)
-
-`coherence mint` / `critique` / `eval` after `./install.sh --mlx`. Not required for the digest loop.
-
----
+**Optional (Apple Silicon).** `coherence mint` / `critique` / `eval` after `./install.sh --mlx`. Not required.
 
 ## Commands
 
-Run `coherence --help`. Common:
+`coherence --help`. Common groups:
 
 | Command | Role |
 |---------|------|
 | `status` `list` `use` `create` | Topics |
-| `cache` `find` | Route to a packet |
+| `cache` `find` | Find a packet for a question |
 | `add-atom` `ingest` | Write claims |
 | `review` `reject`/`backout` `set-review` | Review |
 | `search` `packet` | Compress |
 | `share` `import` `intersect` | Hand off / overlap |
-| `export` | Obsidian/Roam markdown |
-
----
+| `export` | Markdown for Obsidian / Roam |
 
 ## What to store
 
-Only atomize what you would want injected into a future model call on this topic.
-
-Do not store greetings, UI state, near-duplicates, or invented elaboration.
-
----
-
-## File map
+Only claims you would want injected into a future model call on this topic. Not greetings, UI state, near-duplicates, or invented elaboration.
 
 ```
 $COHERENCE_ROOT/                 # default: ./.coherence

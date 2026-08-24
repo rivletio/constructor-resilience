@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""
-Session helpers for constructor-resilience multi-store knowledge.
-
-Commands:
-  status              Show meta + active topic
-  list                List topics
-  use <topic-id>      Set active topic (zoom in)
-  create <id> --title ... [--description ...]
-  path                Print path to active atoms.json
-  render              Render active topic HTML
-  add-atom "text"     Append an atom to the active store (no consistency yet)
-"""
+"""coherence CLI — durable claims, packets, and share files."""
 
 from __future__ import annotations
 
@@ -349,7 +338,7 @@ def cmd_add_atom(args):
 
 
 def cmd_ingest(args):
-    """Host-model mint: load claims JSON (no MLX)."""
+    """Load claims JSON written by the session (no extra model)."""
     raw = None
     if args.json:
         raw = Path(args.json).expanduser().read_text(encoding="utf-8")
@@ -1376,7 +1365,7 @@ def cmd_export(args):
     lines += [
         "## Research summary",
         "",
-        f"This note is a human-readable export of the **{title}** coherence cache. "
+        f"This note is a human-readable export of the **{title}** claim store. "
         f"It holds **{len(atoms)} claims** (atoms) linked by consistency scores. "
         "The *constructor state* below is a compressed resilient packet—what an agent "
         "would load as high-signal context before continuing work on this theme.",
@@ -1448,7 +1437,7 @@ def cmd_export(args):
         "",
         "# Index",
         "",
-        "Welcome. This is an **Obsidian export** of a constructor-resilience coherence cache.",
+        "Welcome. This is an **Obsidian export** of a constructor-resilience claim store.",
         "",
         "It is a human-readable view of durable research claims (**atoms**), how they support or conflict with each other, and a compressed **constructor state** (resilient packet) an agent would load as context.",
         "",
@@ -1724,7 +1713,7 @@ def cmd_intersect(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Constructor-resilience knowledge ops (open coherence cache)",
+        description="Durable claims (atoms), resume packets, and share files",
     )
     parser.add_argument(
         "--root",
@@ -1754,7 +1743,7 @@ def main(argv=None):
     p_render = sub.add_parser("render", help="Render active topic graph PNG")
     p_render.set_defaults(func=cmd_render)
 
-    p_add = sub.add_parser("add-atom", help="Append atom text to active store")
+    p_add = sub.add_parser("add-atom", help="Add one durable claim to the active topic")
     p_add.add_argument("text")
     p_add.add_argument(
         "--auto-score",
@@ -1774,13 +1763,13 @@ def main(argv=None):
     p_add.add_argument(
         "--constraint",
         choices=["possibility", "impossibility", "fact", "decision"],
-        help="Constructor kind for this claim",
+        help="What this claim constrains: possibility, impossibility, fact, or decision",
     )
     p_add.set_defaults(func=cmd_add_atom)
 
     p_ingest = sub.add_parser(
         "ingest",
-        help="Host-model mint: load claims JSON into the active topic (no MLX)",
+        help="Load claims JSON into the active topic (no extra model)",
     )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument("--text", help="Inline JSON string")
@@ -1797,7 +1786,7 @@ def main(argv=None):
 
     p_mint = sub.add_parser(
         "mint",
-        help="Mint durable atoms from text/file via local MLX (pending review)",
+        help="Extract claims from a file with local MLX (pending review)",
     )
     p_mint.add_argument("--text", default="", help="Source text to atomize")
     p_mint.add_argument("--file", help="Source file path")
@@ -1826,7 +1815,7 @@ def main(argv=None):
 
     p_rev = sub.add_parser(
         "review",
-        help="Slick local HTML UI to accept/edit/reject atoms (+ provenance)",
+        help="Local HTML UI to accept, edit, or reject claims",
     )
     p_rev.add_argument("--serve", action="store_true", default=True, help="Start review server")
     p_rev.add_argument("--host", default="127.0.0.1")
@@ -1955,7 +1944,7 @@ def main(argv=None):
     p_rescore.add_argument("--min-abs", type=float, default=0.05)
     p_rescore.set_defaults(func=cmd_rescore)
 
-    p_search = sub.add_parser("search", help="Run resilience search on active store")
+    p_search = sub.add_parser("search", help="Build a small packet from the active topic")
     p_search.add_argument("--reads", type=int, default=40)
     p_search.add_argument("--sweeps", type=int, default=400)
     p_search.add_argument("--top", type=int, default=3)
@@ -1998,7 +1987,7 @@ def main(argv=None):
     p_find.add_argument("--top", type=int, default=5)
     p_find.set_defaults(func=cmd_find)
 
-    p_cache = sub.add_parser("cache", help="Cache layer: packets from topics matching query")
+    p_cache = sub.add_parser("cache", help="Find packets for a question")
     p_cache.add_argument("query")
     p_cache.add_argument("--topics", type=int, default=2, help="Max topics to expand")
     p_cache.add_argument("--max-size", type=int, default=6)
@@ -2007,7 +1996,7 @@ def main(argv=None):
     p_cache.set_defaults(func=cmd_cache)
 
     sub.add_parser("meta", help="Show meta-graph topics and links").set_defaults(func=cmd_meta_graph)
-    p_packet = sub.add_parser("packet", help="Show or rebuild packet.json for active topic")
+    p_packet = sub.add_parser("packet", help="Show or rebuild the resume packet")
     p_packet.add_argument("--rebuild", action="store_true")
     p_packet.add_argument("--max-size", type=int, default=6)
     p_packet.set_defaults(func=cmd_packet)
@@ -2016,7 +2005,7 @@ def main(argv=None):
     
     p_ix = sub.add_parser(
         "intersect",
-        help="Interest intersection: my topic ∩ their topic (realtime browse primitive)",
+        help="Overlap packet: my topic ∩ their topic",
     )
     p_ix.add_argument("mine", help="My topic id (interest surface)")
     p_ix.add_argument("theirs", help="Their topic id (public or shared surface)")
@@ -2037,7 +2026,7 @@ def main(argv=None):
 
     p_share = sub.add_parser(
         "share",
-        help="Write an intentional share envelope from the active packet",
+        help="Write share.json from the active packet",
     )
     p_share.add_argument("--to", required=True, help="Recipient id")
     p_share.add_argument("--from-id", default="local", dest="from_id", help="Sender id")
@@ -2059,7 +2048,7 @@ def main(argv=None):
 
     p_imp = sub.add_parser(
         "import",
-        help="Import atoms.json, packet, or intentional_share as a topic",
+        help="Import atoms.json, packet.json, or share.json as a topic",
     )
     p_imp.add_argument("path", help="Path to atoms.json / packet.json / share.json")
     p_imp.add_argument("--topic", help="Topic id to create or append")

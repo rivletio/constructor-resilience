@@ -7,7 +7,7 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 
 1. Resolve store root via `--root`, `COHERENCE_ROOT`, or host default (`$PWD/.coherence`).
 2. Treat `atoms.json` + `packet.json` (or `share.json`) as the share unit — not full transcripts.
-3. Inject **packet atoms** as privileged context before generation when resuming a theme.
+3. Load **packet atoms** before generating when resuming a theme.
 4. Write only **durable** claims as atoms (net-new).
 5. Never ambient-export **inner personal** data into public/circle surfaces.
 
@@ -50,4 +50,4 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 | Share | Intentional `share.json` envelope (`coherence share` / `import`) — never ambient |
 
 Formats are the same at every circle. **Hosts enforce policy.**
-Other products can speak the same packets; this package is not a product fork.
+Other tools can speak the same packets. Circle policy belongs to the host.

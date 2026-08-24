@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "constructor-resilience"
 version = "0.1.2"
-description = "Open coherence cache: durable atoms, resilient packets, interest intersection"
+description = "Durable claims, resume packets, and interest-surface sharing"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"

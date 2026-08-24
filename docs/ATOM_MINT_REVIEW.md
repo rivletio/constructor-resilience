@@ -2,7 +2,7 @@
 
 ## Why HOW matters
 
-Atoms are not notes. They become **privileged context** for future agents.
+Atoms are not notes. They are injected into later agent turns.
 So every minted claim must answer:
 
 1. **What** is the claim?  
@@ -27,9 +27,13 @@ constructor later checks out.
 
 ## Pipeline
 
+Default path: the session model writes claims (`coherence ingest` / `add-atom`).
+MLX `mint` is optional (Apple Silicon).
+
 ```
-source text/file
-    │  coherence mint  (MLX; grounding gate)
+source text/file  or  claims.json
+    │  coherence ingest   (default)
+    │  coherence mint     (optional MLX; grounding gate)
     ▼
 atoms.json  [status=pending, provenance=…]
     │  coherence critique [--apply]

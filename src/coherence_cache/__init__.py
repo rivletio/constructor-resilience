@@ -1,4 +1,4 @@
-"""Constructor resilience — open coherence cache (atoms + resilient packets)."""
+"""Constructor resilience — durable claims, packets, and share files."""
 
 from .intersection import intersection_packet
 from .search import (
