@@ -173,7 +173,7 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
 }
 ```
 
-`kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` asks whether that atom still holds without the other surface.
+`kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` asks whether that atom still holds without the other surface. `"tension": true` means the counterpart looks like a polarity conflict — the loop should treat that as a falsification challenge, not corroboration.
 
 Hosts SHOULD re-run overlap when the user changes topic dials, seed query, max size, or ∩ vs ∪ (**realtime browse**). Hosts SHOULD run the observe–reason–experiment loop on the challenges: does mine still hold given theirs (and vice versa)?
 

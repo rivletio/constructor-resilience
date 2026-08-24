@@ -81,13 +81,13 @@ def test_intersection_includes_both_sides_when_possible():
     }
     theirs = {
         "atoms": [
-            "Public long-form talk explores AI and understanding.",
+            "Public long-form talk explores world models and understanding.",
             "Listeners meet creators at mutual curiosity.",
             "Durable published claims beat raw take dumps.",
         ],
         "consistency": {"0,1": 0.7, "0,2": 0.6, "1,2": 0.65},
     }
-    doc = intersection_packet(mine, theirs, max_size=6, min_cross_sim=0.05)
+    doc = intersection_packet(mine, theirs, max_size=6)
     assert doc["kind"] == "interest_intersection"
     assert len(doc["atoms"]) >= 2
     sources = {p["source"] for p in doc.get("provenance") or []}
@@ -175,12 +175,12 @@ def test_intersection_structured_atoms_stay_text():
     }
     theirs = {
         "atoms": [
-            make_atom("Public long-form talk explores AI and understanding."),
+            make_atom("Public long-form talk explores world models and understanding."),
             make_atom("Listeners meet creators at mutual curiosity."),
         ],
         "consistency": {"0,1": 0.7},
     }
-    doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.05)
+    doc = intersection_packet(mine, theirs, max_size=4)
     assert doc["atoms"]
     assert all(isinstance(a, str) for a in doc["atoms"])
     assert doc.get("challenges")

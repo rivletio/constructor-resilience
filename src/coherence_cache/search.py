@@ -315,7 +315,7 @@ def find_resilient_constructors(
     return unique
 
 
-def greedy_resilient(
+def greedy_resilient_indices(
     atoms: Sequence[str],
     consistency: Dict,
     max_size: Optional[int] = None,
@@ -323,8 +323,8 @@ def greedy_resilient(
     coupling_scale: float = 1.5,
     redundancy_scale: float = 2.0,
     redundancy_threshold: float = 0.22,
-) -> Tuple[List[str], float]:
-    """Constructive baseline with the same energy model (incl. redundancy)."""
+) -> Tuple[List[int], float]:
+    """Like ``greedy_resilient`` but returns pool indices (stable for duplicate text)."""
     n = len(atoms)
     if n == 0:
         return [], 0.0
@@ -341,6 +341,8 @@ def greedy_resilient(
     selected: set = set()
     best_e = 0.0
     limit = max_size if max_size is not None else n
+    if limit <= 0:
+        return [], 0.0
     while len(selected) < limit:
         best_k, best_delta = None, 0.0
         for k in range(n):
@@ -356,9 +358,30 @@ def greedy_resilient(
             break
         selected.add(best_k)
         best_e += best_delta
+    return sorted(selected), float(best_e)
+
+
+def greedy_resilient(
+    atoms: Sequence[str],
+    consistency: Dict,
+    max_size: Optional[int] = None,
+    select_penalty: float = -1.0,
+    coupling_scale: float = 1.5,
+    redundancy_scale: float = 2.0,
+    redundancy_threshold: float = 0.22,
+) -> Tuple[List[str], float]:
+    """Constructive baseline with the same energy model (incl. redundancy)."""
+    idx, eng = greedy_resilient_indices(
+        atoms,
+        consistency,
+        max_size=max_size,
+        select_penalty=select_penalty,
+        coupling_scale=coupling_scale,
+        redundancy_scale=redundancy_scale,
+        redundancy_threshold=redundancy_threshold,
+    )
     texts = [as_text(a) for a in atoms]
-    chosen = [texts[i] for i in sorted(selected)]
-    return chosen, float(best_e)
+    return [texts[i] for i in idx], eng
 
 
 def load_store(path: Path) -> dict:

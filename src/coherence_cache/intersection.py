@@ -13,10 +13,74 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from .atoms import is_active
 from .mentions import extract_mentions
-from .search import as_text, greedy_resilient, lexical_similarity, token_set
+from .search import as_text, greedy_resilient_indices, token_set
 
 Pair = Tuple[int, int]
+
+# Function words that inflate Jaccard without meaning a shared claim.
+_STOP = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "of",
+        "and",
+        "or",
+        "to",
+        "in",
+        "is",
+        "are",
+        "was",
+        "were",
+        "for",
+        "on",
+        "with",
+        "as",
+        "by",
+        "at",
+        "from",
+        "that",
+        "this",
+        "it",
+        "be",
+        "its",
+        "into",
+        "than",
+        "then",
+        "also",
+        "about",
+        "over",
+        "under",
+        "can",
+        "may",
+        "will",
+        "we",
+        "i",
+        "you",
+        "they",
+        "he",
+        "she",
+        "does",
+        "do",
+        "did",
+    }
+)
+_NEG = frozenset(
+    {
+        "not",
+        "never",
+        "no",
+        "none",
+        "neither",
+        "impossible",
+        "cannot",
+        "cant",
+        "false",
+        "without",
+    }
+)
 
 
 def _parse_consistency(store: dict) -> Dict[Pair, float]:
@@ -52,8 +116,12 @@ def _mention_names(atom) -> set[str]:
     return names
 
 
+def _content_tokens(text) -> set[str]:
+    return token_set(text) - _STOP
+
+
 def _stem_tokens(text) -> set[str]:
-    toks = token_set(text)
+    toks = _content_tokens(text)
     out = set(toks)
     for t in toks:
         if len(t) > 4 and t.endswith("s"):
@@ -61,11 +129,30 @@ def _stem_tokens(text) -> set[str]:
     return out
 
 
+def _core_polarity(text) -> Tuple[set[str], bool]:
+    toks = _stem_tokens(text)
+    negated = bool(_content_tokens(text) & _NEG) or "impossible" in as_text(text).lower()
+    return toks - _NEG, negated
+
+
+def claims_tension(a, b) -> bool:
+    """True when two claims share a core but disagree in polarity."""
+    ca, na = _core_polarity(a)
+    cb, nb = _core_polarity(b)
+    if not ca or not cb or na == nb:
+        return False
+    inter = ca & cb
+    if not inter:
+        return False
+    jacc = len(inter) / len(ca | cb)
+    return len(inter) >= 3 or jacc >= 0.4
+
+
 def cross_affinity(a, b) -> float:
     """Lexical Jaccard, stem Jaccard, and shared mention names."""
-    ta, tb = as_text(a), as_text(b)
-    lex = lexical_similarity(ta, tb)
-    sa, sb = _stem_tokens(ta), _stem_tokens(tb)
+    ta, tb = _content_tokens(a), _content_tokens(b)
+    lex = (len(ta & tb) / len(ta | tb)) if ta and tb else 0.0
+    sa, sb = _stem_tokens(a), _stem_tokens(b)
     stem = (len(sa & sb) / len(sa | sb)) if sa and sb else 0.0
     ma, mb = _mention_names(a), _mention_names(b)
     mention = 0.0
@@ -73,7 +160,9 @@ def cross_affinity(a, b) -> float:
         mention = len(ma & mb) / len(ma | mb)
         if ma & mb:
             mention = max(mention, 0.62)
-    return max(lex, stem, mention)
+    rare = {t for t in (ta & tb) if len(t) >= 8}
+    rare_boost = 0.22 if rare else 0.0
+    return max(lex, stem, mention, rare_boost)
 
 
 def align_cross_atoms(
@@ -91,6 +180,35 @@ def align_cross_atoms(
     return links
 
 
+def _atom_at(store: dict, idx) -> object:
+    atoms = store.get("atoms") or []
+    if isinstance(idx, int) and 0 <= idx < len(atoms):
+        return atoms[idx]
+    return None
+
+
+def _active_view(store: dict) -> Tuple[list, Dict[Pair, float], List[int]]:
+    """Active non-blank atoms, remapped consistency, original store indices."""
+    atoms = list(store.get("atoms") or [])
+    keep: List[int] = []
+    for i, a in enumerate(atoms):
+        if not is_active(a):
+            continue
+        if not as_text(a).strip():
+            continue
+        keep.append(i)
+    remap = {old: new for new, old in enumerate(keep)}
+    cons: Dict[Pair, float] = {}
+    for (i, j), s in _parse_consistency(store).items():
+        if i in remap and j in remap:
+            a, b = remap[i], remap[j]
+            if a > b:
+                a, b = b, a
+            if a != b:
+                cons[(a, b)] = s
+    return [atoms[i] for i in keep], cons, keep
+
+
 def overlap_challenges(
     provenance: Sequence[dict],
     my_store: dict,
@@ -98,43 +216,67 @@ def overlap_challenges(
     *,
     min_sim: float = 0.18,
 ) -> List[dict]:
-    """One belief-challenge per selected atom against the other full surface."""
-    mine_raw = list(my_store.get("atoms") or [])
-    theirs_raw = list(their_store.get("atoms") or [])
+    """One belief-challenge per selected atom against the other full surface.
+
+    Prefers a polarity conflict over a paraphrase so the loop actually
+    challenges whether the atom still holds.
+    """
     out: List[dict] = []
     for p in provenance:
         text = as_text(p.get("text"))
         src = p.get("source")
         if src == "mine":
-            others, other_src = theirs_raw, "theirs"
+            others, other_src, self_store = (
+                list(their_store.get("atoms") or []),
+                "theirs",
+                my_store,
+            )
         elif src == "theirs":
-            others, other_src = mine_raw, "mine"
+            others, other_src, self_store = (
+                list(my_store.get("atoms") or []),
+                "mine",
+                their_store,
+            )
         else:
             continue
-        best_text = None
-        best_s = 0.0
-        best_j = None
+        self_atom = _atom_at(self_store, p.get("store_index")) or text
+        best_support: Optional[Tuple[float, int, str]] = None
+        best_tension: Optional[Tuple[float, int, str]] = None
         for j, o in enumerate(others):
-            s = cross_affinity(text, o)
-            if s > best_s:
-                best_s = s
-                best_text = as_text(o)
-                best_j = j
+            if not is_active(o) or not as_text(o).strip():
+                continue
+            s = cross_affinity(self_atom, o)
+            if s < min_sim:
+                continue
+            hit = (s, j, as_text(o))
+            if claims_tension(self_atom, o):
+                if best_tension is None or s > best_tension[0]:
+                    best_tension = hit
+            elif best_support is None or s > best_support[0]:
+                best_support = hit
         rec = {
             "source": src,
             "store_index": p.get("store_index"),
             "text": text,
             "other_source": other_src,
         }
-        if best_text is not None and best_s >= min_sim:
-            rec["other"] = best_text
-            rec["other_store_index"] = best_j
-            rec["affinity"] = round(float(best_s), 3)
-            rec["prompt"] = "Does this atom still hold given the other side?"
+        chosen = best_tension or best_support
+        if chosen is not None:
+            s, j, other_text = chosen
+            rec["other"] = other_text
+            rec["other_store_index"] = j
+            rec["affinity"] = round(float(s), 3)
+            rec["tension"] = best_tension is not None
+            rec["prompt"] = (
+                "These claims conflict — does this atom still hold?"
+                if rec["tension"]
+                else "Does this atom still hold given the other side?"
+            )
         else:
             rec["other"] = None
             rec["other_store_index"] = None
             rec["affinity"] = 0.0
+            rec["tension"] = False
             rec["prompt"] = (
                 "No counterpart on the other surface — "
                 "is this still true without them?"
@@ -159,8 +301,8 @@ def build_intersection_pool(
 
     Cross edges use lexical alignment (and optional seed boost).
     """
-    mine_raw = list(my_store.get("atoms") or [])
-    theirs_raw = list(their_store.get("atoms") or [])
+    mine_raw, mine_cons, mine_orig = _active_view(my_store)
+    theirs_raw, theirs_cons, theirs_orig = _active_view(their_store)
     mine = [as_text(a) for a in mine_raw]
     theirs = [as_text(a) for a in theirs_raw]
     pool: List[str] = mine + theirs
@@ -168,9 +310,9 @@ def build_intersection_pool(
     cons: Dict[Pair, float] = {}
 
     # Internal edges, damped so dense hubs cannot drown the overlap.
-    for (i, j), s in _parse_consistency(my_store).items():
+    for (i, j), s in mine_cons.items():
         cons[(i, j)] = 0.4 * s
-    for (i, j), s in _parse_consistency(their_store).items():
+    for (i, j), s in theirs_cons.items():
         cons[(i + n_mine, j + n_mine)] = 0.4 * s
 
     # Cross-surface affinity (lexical + stems + mention joins)
@@ -203,7 +345,12 @@ def build_intersection_pool(
     provenance = []
     for i, a in enumerate(mine):
         provenance.append(
-            {"index": i, "source": "mine", "text": a, "store_index": i}
+            {
+                "index": i,
+                "source": "mine",
+                "text": a,
+                "store_index": mine_orig[i],
+            }
         )
     for j, b in enumerate(theirs):
         provenance.append(
@@ -211,7 +358,7 @@ def build_intersection_pool(
                 "index": j + n_mine,
                 "source": "theirs",
                 "text": b,
-                "store_index": j,
+                "store_index": theirs_orig[j],
             }
         )
 
@@ -272,6 +419,8 @@ def intersection_packet(
 
     if not pool:
         return _doc([], 0.0, [], [])
+    if require_cross and (n_mine_orig == 0 or n_theirs_orig == 0):
+        return _doc([], 0.0, [], [])
 
     if require_cross and n_mine > 0 and len(pool) > n_mine:
         linked: set[int] = set()
@@ -279,12 +428,6 @@ def intersection_packet(
             if (i < n_mine) != (j < n_mine):
                 linked.add(i)
                 linked.add(j)
-        if seed_query:
-            q_tokens = [t for t in seed_query.lower().split() if len(t) > 2]
-            for idx, atom in enumerate(pool):
-                al = atom.lower()
-                if any(t in al for t in q_tokens):
-                    linked.add(idx)
         if not linked:
             pool, cons, provenance, n_mine = [], {}, [], 0
         elif linked:
@@ -303,19 +446,16 @@ def intersection_packet(
             provenance = [provenance[i] for i in keep]
             n_mine = n_mine_sub
 
-    selected, eng = greedy_resilient(
+    selected_idx, eng = greedy_resilient_indices(
         pool,
         cons,
         max_size=max_size,
         redundancy_scale=redundancy_scale,
     )
 
-    if require_cross and n_mine > 0 and len(pool) > n_mine and selected:
-        sources = set()
-        for s in selected:
-            idx = pool.index(s)
-            sources.add("mine" if idx < n_mine else "theirs")
-        if sources != {"mine", "theirs"} and max_size >= 2:
+    if require_cross and n_mine > 0 and len(pool) > n_mine and selected_idx:
+        sources = {"mine" if i < n_mine else "theirs" for i in selected_idx}
+        if sources != {"mine", "theirs"} and (max_size or 0) >= 2:
 
             def cross_degree(i: int) -> float:
                 total = 0.0
@@ -329,32 +469,36 @@ def intersection_packet(
 
             mine_idxs = sorted(range(n_mine), key=cross_degree, reverse=True)
             their_idxs = sorted(range(n_mine, len(pool)), key=cross_degree, reverse=True)
-            forced: List[str] = []
+            forced: List[int] = []
             if mine_idxs and cross_degree(mine_idxs[0]) > 0:
-                forced.append(pool[mine_idxs[0]])
+                forced.append(mine_idxs[0])
             if their_idxs and cross_degree(their_idxs[0]) > 0:
-                forced.append(pool[their_idxs[0]])
-            rest, eng2 = greedy_resilient(
+                forced.append(their_idxs[0])
+            rest, eng2 = greedy_resilient_indices(
                 pool,
                 cons,
                 max_size=max_size,
                 redundancy_scale=redundancy_scale,
             )
-            for a in rest:
-                if a not in forced and len(forced) < max_size:
-                    forced.append(a)
+            for i in rest:
+                if i not in forced and len(forced) < max_size:
+                    forced.append(i)
             if forced:
-                selected = forced[:max_size]
+                selected_idx = forced[:max_size]
                 eng = eng2
 
+    selected = []
     indices = []
     prov_sel = []
-    for s in selected:
-        try:
-            i = pool.index(s)
-        except ValueError:
+    for i in selected_idx:
+        if i < 0 or i >= len(pool):
             continue
-        p = provenance[i] if i < len(provenance) else {"index": i, "source": "?", "text": s}
+        p = (
+            provenance[i]
+            if i < len(provenance)
+            else {"index": i, "source": "?", "text": pool[i]}
+        )
+        selected.append(pool[i])
         indices.append(int(p.get("index", i)))
         prov_sel.append(p)
     return _doc(selected, eng, indices, prov_sel)

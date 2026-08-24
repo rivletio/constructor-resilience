@@ -19,12 +19,14 @@ _TEMPLATE = re.compile(
     r"<[A-Z][A-Z0-9:_-]+>|stand-alone sentence from the session|Name:kind @ file\.py",
     re.I,
 )
+_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]")
 
 
 def check_text(text: str) -> list[str]:
     """Text-only FAILs (overlap packets are strings, not store records)."""
     fails: list[str] = []
-    if len(text) < 24:
+    n_cjk = len(_CJK.findall(text or ""))
+    if n_cjk < 8 and len(text) < 24:
         fails.append("too short")
     if _CHAT.search(text or ""):
         fails.append("chat, not a claim")
@@ -134,7 +136,8 @@ def format_overlap_check(doc: dict) -> str:
             if other:
                 osrc = ch.get("other_source", "?")
                 aff = ch.get("affinity", 0)
-                lines.append(f"      vs ({osrc}) {other}  affinity={aff}")
+                tag = " TENSION" if ch.get("tension") else ""
+                lines.append(f"      vs ({osrc}) {other}  affinity={aff}{tag}")
             lines.append(f"      {prompt}")
     if failed_idx:
         idx = failed_idx[0]

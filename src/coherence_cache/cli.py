@@ -1876,6 +1876,16 @@ def cmd_check(args):
         doc = load_json(path)
         if not doc:
             raise SystemExit(f"Missing packet: {path}")
+        atoms = doc.get("atoms") or []
+        a0 = atoms[0] if atoms else None
+        if isinstance(a0, dict) and any(
+            k in a0 for k in ("constraint", "mentions", "review", "text")
+        ):
+            print(format_check(doc))
+            _rows, _n, n_fail = check_store(doc)
+            if n_fail:
+                raise SystemExit(1)
+            return
         print(format_overlap_check(doc))
         if overlap_fail_count(doc):
             raise SystemExit(1)
