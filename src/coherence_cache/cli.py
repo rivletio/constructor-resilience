@@ -30,6 +30,7 @@ from .atoms import (
     parse_ingest_payload,
     set_review,
 )
+from .mentions import parse_mention_flag
 from .search import token_set
 
 extract_references = _refs_mod.extract_references
@@ -354,13 +355,30 @@ def cmd_add_atom(args):
         print(f"  auto-score edges involving new atom: {linked}")
 
 
+class ClaimParts(argparse.Action):
+    """``--atom`` then ``--mention Name[:kind]`` attach joins to that claim."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        bag = getattr(namespace, "claim_parts", None)
+        if bag is None:
+            bag = []
+            namespace.claim_parts = bag
+        if option_string == "--atom":
+            bag.append({"text": values})
+            return
+        if option_string == "--mention":
+            if not bag:
+                parser.error("--mention requires a preceding --atom")
+            rec = parse_mention_flag(values)
+            if rec:
+                bag[-1].setdefault("mentions", []).append(rec)
+
+
 def _items_from_args(args) -> list:
     """Collect claims from --atom, --json, --text, or non-tty stdin. Never block on a TTY."""
     items: list = []
-    for raw_atom in getattr(args, "atom", None) or []:
-        text = (raw_atom or "").strip()
-        if text:
-            items.append(text)
+    for rec in getattr(args, "claim_parts", None) or []:
+        items.append(rec)
     blob = None
     if getattr(args, "json", None):
         blob = Path(args.json).expanduser().read_text(encoding="utf-8")
@@ -1861,9 +1879,16 @@ def main(argv=None):
     )
     p_ingest.add_argument(
         "--atom",
-        action="append",
-        default=[],
+        action=ClaimParts,
+        dest="claim_parts",
         help="Durable claim (repeatable). Prefer this over a JSON file.",
+    )
+    p_ingest.add_argument(
+        "--mention",
+        action=ClaimParts,
+        dest="claim_parts",
+        metavar="NAME[:KIND]",
+        help="Join on the preceding --atom (concept|person|org|work|place|other)",
     )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument("--text", help="Inline JSON string")
@@ -1896,9 +1921,16 @@ def main(argv=None):
     )
     p_pack.add_argument(
         "--atom",
-        action="append",
-        default=[],
+        action=ClaimParts,
+        dest="claim_parts",
         help="Durable claim (repeatable)",
+    )
+    p_pack.add_argument(
+        "--mention",
+        action=ClaimParts,
+        dest="claim_parts",
+        metavar="NAME[:KIND]",
+        help="Join on the preceding --atom (concept|person|org|work|place|other)",
     )
     p_pack.add_argument("--json", help="Path to claims JSON")
     p_pack.add_argument("--text", help="Inline claims JSON")

@@ -81,6 +81,19 @@ def normalize_mention(item: Any) -> dict | None:
     return rec
 
 
+def parse_mention_flag(raw: str) -> dict | None:
+    """``Name`` or ``Name:kind`` from a CLI flag."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if ":" in text:
+        name, kind = text.rsplit(":", 1)
+        kind = kind.strip().lower()
+        if kind in VALID_MENTION_KIND and name.strip():
+            return normalize_mention({"name": name.strip(), "kind": kind})
+    return normalize_mention({"name": text, "kind": "concept"})
+
+
 def normalize_mentions(items: Iterable | None) -> list[dict]:
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()

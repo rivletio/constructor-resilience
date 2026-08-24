@@ -116,6 +116,31 @@ def test_pack_from_empty_store_writes_packet(tmp_path, capsys):
     assert "Packets are the share unit" in packet["atoms"][0]
 
 
+def test_pack_mention_flag_joins_last_atom(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Joins",
+        "--constraint",
+        "fact",
+        "--atom",
+        "RWKV-7 has constant memory and constant time per token.",
+        "--mention",
+        "RWKV-7:work",
+        "--mention",
+        "compressive state:concept",
+        "--atom",
+        "Packets are the share unit, not transcripts.",
+    )
+    store = _load(root / "topics" / "joins" / "atoms.json")
+    names0 = {(m["name"], m["kind"]) for m in store["atoms"][0].get("mentions") or []}
+    assert ("RWKV-7", "work") in names0
+    assert ("compressive state", "concept") in names0
+    assert not (store["atoms"][1].get("mentions") or [])
+
+
 def test_cache_ignores_weak_tokens(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(
