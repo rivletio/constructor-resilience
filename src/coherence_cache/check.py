@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from .atoms import REVIEW_REJECTED, atom_review_status, atom_text
-from .mentions import MENTION_GROUND_MIN, mention_grounding
+from .mentions import mention_attestation_fail
 
 _CHAT = re.compile(
     r"(?is)^(ok|okay|sure|thanks|hi|hello|hey)\b"
@@ -54,11 +54,9 @@ def check_atom(atom: Any) -> list[str]:
         if not isinstance(m, dict):
             continue
         name = m.get("name") or "?"
-        g = mention_grounding(name, text, aliases=m.get("aliases"))
-        if g < MENTION_GROUND_MIN:
-            fails.append(
-                f"mention {name!r} not grounded in claim ({g:.2f})"
-            )
+        att = mention_attestation_fail(name, text, aliases=m.get("aliases"))
+        if att:
+            fails.append(att)
         if m.get("path") and not m.get("line"):
             fails.append(f"mention {name!r} has path but no line")
         url = str(m.get("url") or "")
@@ -97,11 +95,23 @@ def format_check(store: dict) -> str:
         lines.append(f"  [{i}] FAIL {' | '.join(fails)}")
     if failed_idx:
         idx = failed_idx[0]
-        lines.append(
-            f"observe: FAIL [{idx}]; "
-            f"experiment: coherence reject {idx} --reason \"check fail\" "
-            "then pack one replacement"
-        )
+        first = next(f[0] for i, f in rows if i == idx and f)
+        if first.startswith("anaphor"):
+            exp = (
+                f"coherence reject {idx} --reason \"anaphor\" "
+                "then pack the claim with the name in the sentence"
+            )
+        elif "not attested" in first:
+            exp = (
+                f"coherence reject {idx} --reason \"mention not attested\" "
+                "then put the name or ALIAS in the sentence, or drop the join"
+            )
+        else:
+            exp = (
+                f"coherence reject {idx} --reason \"check fail\" "
+                "then pack one replacement"
+            )
+        lines.append(f"observe: FAIL [{idx}]; experiment: {exp}")
     return "\n".join(lines)
 
 

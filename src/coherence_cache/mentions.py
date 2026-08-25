@@ -74,6 +74,53 @@ def _token_attested(tok: str, text_toks: set[str]) -> bool:
     return False
 
 
+_DUMMY_IT = re.compile(
+    r"(?is)^it\s+(is|was|will\s+be|has\s+been|seems|appears)\b"
+)
+_ANAPHOR_SLOT = re.compile(
+    r"(?is)(?:^|\b)("
+    r"the\s+same"
+    r"|this\s+(?:method|model|paper|architecture|objective|approach|claim)"
+    r"|the\s+(?:method|model|paper|architecture|objective|author)"
+    r")\b"
+)
+_PRONOUN_SUBJ = re.compile(
+    r"(?is)^(it|they|this|these|that)\s+"
+    r"(?!is\b|was\b|will\b|has\b|seems\b|appears\b)"
+)
+
+
+def claim_has_referential_anaphor(text: str) -> bool:
+    """True when the sentence has a hole a mention could fill (not dummy 'it is')."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _DUMMY_IT.match(t):
+        return False
+    return bool(_PRONOUN_SUBJ.match(t) or _ANAPHOR_SLOT.search(t))
+
+
+def mention_attestation_fail(
+    name: str,
+    text: str,
+    *,
+    aliases: list | None = None,
+) -> str | None:
+    """Actionable FAIL if ``name`` is not attested in ``text``, else None."""
+    g = mention_grounding(name, text, aliases=aliases)
+    if g >= MENTION_GROUND_MIN:
+        return None
+    if claim_has_referential_anaphor(text):
+        return (
+            f"anaphor: rewrite the claim so {name!r} appears "
+            f"(not 'it'/'the same')"
+        )
+    return (
+        f"mention {name!r} not attested ({g:.2f}); "
+        f"put the name or ALIAS in the sentence, or drop the join"
+    )
+
+
 def mention_grounding(
     name: str,
     text: str,
