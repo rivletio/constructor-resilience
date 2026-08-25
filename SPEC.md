@@ -177,7 +177,7 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
 
 Packet `kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` (`kind: none`) asks whether that atom still holds without the other surface.
 
-Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claims actually overlap), `weak` (shared mention name with little claim content — the join is a candidate, not a verdict), `none` (one-sided). Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
+Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claim-text overlap **or** a shared mention with `grounding ≥ 0.5`), `garbage` (shared name with `grounding < 0.5` — unearned tag), `none` (one-sided). `grounding` is `max(compact_hit, token_cover)`: compact form of the name (hyphens/spaces stripped, length ≥ 3) as a substring of the compact claim, or the fraction of name tokens attested in the claim. Below 0.5 the mention is garbage: it does not count toward overlap affinity, and `coherence check` FAILs the atom (`mention 'JEPA' not grounded in claim (0.00)`). Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
 
 Hosts SHOULD re-run overlap after reject/revise, then diff with `--against previous.json` (reconstructed set vs old). Stop at a fixed point with no remaining `tension`.
 

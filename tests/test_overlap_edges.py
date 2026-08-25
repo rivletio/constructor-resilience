@@ -21,6 +21,7 @@ from coherence_cache.intersection import (
     cross_affinity,
     intersection_packet,
 )
+from coherence_cache.mentions import MENTION_GROUND_MIN, join_grounding, mention_grounding
 
 
 @pytest.fixture(autouse=True)
@@ -139,7 +140,36 @@ def test_all_contradictors_are_emitted():
     assert overlap_unresolved_count(doc) >= 2
 
 
-def test_mention_join_survives_into_challenges():
+def test_mention_grounding_score():
+    assert mention_grounding("JEPA", "JEPA predicts in latent space rather than tokens.") == 1.0
+    assert mention_grounding("JEPA", "V-JEPA extends the same objective to video.") == 1.0
+    assert mention_grounding("packet", "Packets are the share unit, not transcripts.") >= 0.5
+    assert mention_grounding("world models", "I care about world models and latent prediction.") == 1.0
+    assert mention_grounding("AI", "Public talks explore AI and understanding.") == 1.0
+    assert mention_grounding("AI", "mainly at dusk and dawn.") == 0.0
+    assert mention_grounding("JEPA", "Domestic cats hunt primarily at dusk and dawn.") == 0.0
+    assert mention_grounding("JEPA", "Domestic cats hunt primarily at dusk and dawn.") < MENTION_GROUND_MIN
+
+
+def test_ungrounded_mention_fails_check():
+    from coherence_cache.check import check_atom
+
+    bad = {
+        "text": "Domestic cats hunt primarily at dusk and dawn.",
+        "constraint": "fact",
+        "mentions": [{"name": "JEPA", "kind": "concept"}],
+    }
+    fails = check_atom(bad)
+    assert any("not grounded" in f for f in fails)
+    ok = {
+        "text": "JEPA predicts in latent space rather than tokens.",
+        "constraint": "fact",
+        "mentions": [{"name": "JEPA", "kind": "concept"}],
+    }
+    assert not any("not grounded" in f for f in check_atom(ok))
+
+
+def test_garbage_mention_does_not_create_overlap():
     mine = {
         "atoms": [
             make_atom(
@@ -156,12 +186,37 @@ def test_mention_join_survives_into_challenges():
             )
         ]
     }
+    assert mention_grounding("JEPA", mine["atoms"][0]["text"]) < MENTION_GROUND_MIN
+    assert join_grounding(mine["atoms"][0], theirs["atoms"][0]) < MENTION_GROUND_MIN
+    doc = intersection_packet(mine, theirs)
+    assert doc["atoms"] == []
+
+
+def test_grounded_mention_join_survives_thin_content():
+    mine = {
+        "atoms": [
+            make_atom(
+                "JEPA predicts in latent space rather than tokens.",
+                mentions=[{"name": "JEPA", "kind": "concept"}],
+            )
+        ]
+    }
+    theirs = {
+        "atoms": [
+            make_atom(
+                "V-JEPA extends the same objective to video.",
+                mentions=[{"name": "JEPA", "kind": "concept"}],
+            )
+        ]
+    }
+    assert join_grounding(mine["atoms"][0], theirs["atoms"][0]) >= MENTION_GROUND_MIN
     doc = intersection_packet(mine, theirs)
     assert doc["atoms"]
     paired = [c for c in doc["challenges"] if c.get("other")]
     assert paired
     assert paired[0]["affinity"] >= 0.18
-    assert paired[0].get("kind") == "weak"
+    assert paired[0].get("grounding", 0) >= MENTION_GROUND_MIN
+    assert paired[0].get("kind") in {"support", "tension"}
 
 
 def test_stopwords_do_not_fabricate_overlap():

@@ -37,6 +37,124 @@ VALID_MENTION_KIND = frozenset(
     {"concept", "person", "org", "work", "place", "other"}
 )
 
+# A mention is garbage when it is not attested in the claim.
+# grounding = max(compact_hit, token_cover) in [0, 1]
+#   compact_hit: 1 if compact(name) (len≥3) is a substring of compact(text)
+#                (hyphens/spaces dropped: "V-JEPA" → "vjepa" contains "jepa")
+#   token_cover: fraction of name tokens (len≥2) that hit the text
+#                (exact, simple stem, or prefix/suffix within 2 chars)
+# Threshold 0.5 = at least half the name tokens, or a compact substring.
+MENTION_GROUND_MIN = 0.5
+
+
+def _compact_alnum(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def _word_tokens(s: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", (s or "").lower()))
+
+
+def _token_attested(tok: str, text_toks: set[str]) -> bool:
+    if tok in text_toks:
+        return True
+    for t in text_toks:
+        if len(t) > 4 and t.endswith("s") and t[:-1] == tok:
+            return True
+        if len(tok) > 4 and tok.endswith("s") and tok[:-1] == t:
+            return True
+        if t.startswith(tok) and 0 < len(t) - len(tok) <= 2:
+            return True
+        if tok.startswith(t) and 0 < len(tok) - len(t) <= 2:
+            return True
+    return False
+
+
+def mention_grounding(
+    name: str,
+    text: str,
+    *,
+    aliases: list | None = None,
+) -> float:
+    """How attested ``name`` is in ``text``, in ``[0, 1]``.
+
+    0.0 — name does not appear (garbage tag).
+    1.0 — compact form or every name token is in the claim.
+    """
+    blob = text
+    if not isinstance(blob, str):
+        blob = str((blob or {}).get("text") if isinstance(blob, dict) else blob or "")
+    best = 0.0
+    for n in [name, *(aliases or [])]:
+        n = str(n or "").strip()
+        if not n:
+            continue
+        best = max(best, _ground_one(n, blob))
+        if best >= 1.0:
+            return 1.0
+    return best
+
+
+def _ground_one(name: str, text: str) -> float:
+    cn, ct = _compact_alnum(name), _compact_alnum(text)
+    ntoks = {t for t in _word_tokens(name) if len(t) >= 2}
+    ttoks = _word_tokens(text)
+    scores: list[float] = []
+    if ntoks:
+        hits = sum(1 for t in ntoks if _token_attested(t, ttoks))
+        scores.append(hits / len(ntoks))
+    if len(cn) >= 3 and cn in ct:
+        scores.append(1.0)
+    elif len(cn) >= 3:
+        for t in ttoks:
+            if len(t) >= 3 and (cn in t or t in cn):
+                scores.append(1.0)
+                break
+    elif cn and cn in ttoks:
+        scores.append(1.0)
+    return max(scores) if scores else 0.0
+
+
+def join_grounding(a, b) -> float:
+    """Best shared mention: min(grounding on A, grounding on B).
+
+    0.0 if they share no name, or every shared name is unattested on one side.
+    """
+    def _names(atom) -> tuple[set[str], str]:
+        out: set[str] = set()
+        if isinstance(atom, dict):
+            blob = str(atom.get("text") or "")
+            for m in atom.get("mentions") or []:
+                if isinstance(m, dict):
+                    n = str(m.get("name") or "").strip().lower()
+                    for al in m.get("aliases") or []:
+                        if str(al).strip():
+                            out.add(str(al).strip().lower())
+                else:
+                    n = str(m).strip().lower()
+                if n:
+                    out.add(n)
+        else:
+            blob = str(atom or "")
+        blob = blob.strip()
+        for m in extract_mentions(blob):
+            n = str(m.get("name") or "").strip().lower()
+            if n:
+                out.add(n)
+        return out, blob
+
+    na, ta = _names(a)
+    nb, tb = _names(b)
+    shared = na & nb
+    if not shared:
+        return 0.0
+    best = 0.0
+    for n in shared:
+        g = min(mention_grounding(n, ta), mention_grounding(n, tb))
+        if g > best:
+            best = g
+    return best
+
 _STOP_ACRONYM = frozenset(
     {
         "THE",

@@ -37,7 +37,7 @@ coherence pack --title "your theme" --constraint fact \
   --mention "A Person:person" --at "t=3033"
 ```
 
-The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, including a topic with itself): check every challenge, reconstruct, compare with `--against` the previous packet. `TENSION` is a check FAIL (incompatible claims are not done). `WEAK JOIN` is a shared name without shared claim content — reason whether the mention is garbage. Atom JSON shape is in [SPEC.md](../SPEC.md).
+The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, including a topic with itself): check every challenge, reconstruct, compare with `--against` the previous packet. `TENSION` is a check FAIL (incompatible claims are not done). A mention is **garbage** when `grounding < 0.5`: the name is not attested in the claim (compact substring or name tokens). Check FAILs `mention 'JEPA' not grounded in claim (0.00)`. Grounded names (`JEPA` in the sentence, or `JEPA` in `V-JEPA`) still join; unearned tags do not. Atom JSON shape is in [SPEC.md](../SPEC.md).
 
 **Handoff.** `pack` already wrote the packet.
 

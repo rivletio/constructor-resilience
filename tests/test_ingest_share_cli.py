@@ -40,7 +40,7 @@ def test_ingest_share_import_roundtrip(tmp_path, capsys):
                     {
                         "text": "Mentions are joins on a claim, not a second graph.",
                         "constraint": "fact",
-                        "mentions": [{"name": "NER", "kind": "concept"}],
+                        "mentions": [{"name": "Mentions", "kind": "concept"}],
                     },
                     "Packets are the share unit, not transcripts.",
                 ]
@@ -64,7 +64,7 @@ def test_ingest_share_import_roundtrip(tmp_path, capsys):
     assert len(store["atoms"]) == 3
     assert store["atoms"][0]["constraint"] == "fact"
     names = {m["name"] for a in store["atoms"] for m in (a.get("mentions") or [])}
-    assert "NER" in names
+    assert "Mentions" in names
 
     capsys.readouterr()
     _run(root, "share", "--to", "alice", "--audience", "circle", "--forward", "none")

@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from .atoms import REVIEW_REJECTED, atom_review_status, atom_text
+from .mentions import MENTION_GROUND_MIN, mention_grounding
 
 _CHAT = re.compile(
     r"(?is)^(ok|okay|sure|thanks|hi|hello|hey)\b"
@@ -53,6 +54,11 @@ def check_atom(atom: Any) -> list[str]:
         if not isinstance(m, dict):
             continue
         name = m.get("name") or "?"
+        g = mention_grounding(name, text, aliases=m.get("aliases"))
+        if g < MENTION_GROUND_MIN:
+            fails.append(
+                f"mention {name!r} not grounded in claim ({g:.2f})"
+            )
         if m.get("path") and not m.get("line"):
             fails.append(f"mention {name!r} has path but no line")
         url = str(m.get("url") or "")
@@ -115,9 +121,13 @@ def overlap_tension_count(doc: dict) -> int:
     )
 
 
+def overlap_garbage_count(doc: dict) -> int:
+    return sum(1 for c in doc.get("challenges") or [] if c.get("kind") == "garbage")
+
+
 def overlap_unresolved_count(doc: dict) -> int:
-    """Text FAILs plus polarity conflicts the loop must resolve."""
-    return overlap_fail_count(doc) + overlap_tension_count(doc)
+    """Text FAILs plus polarity conflicts and ungrounded mention joins."""
+    return overlap_fail_count(doc) + overlap_tension_count(doc) + overlap_garbage_count(doc)
 
 
 def format_overlap_check(doc: dict) -> str:
@@ -153,12 +163,13 @@ def format_overlap_check(doc: dict) -> str:
                 tag = ""
                 if kind == "tension" or ch.get("tension"):
                     tag = " TENSION"
-                elif kind == "weak":
-                    tag = " WEAK JOIN"
+                elif kind == "garbage":
+                    g = ch.get("grounding", 0)
+                    tag = f" GARBAGE JOIN grounding={g}"
                 lines.append(f"      vs ({osrc}) {other}  affinity={aff}{tag}")
             lines.append(f"      {prompt}")
     n_ten = overlap_tension_count(doc)
-    n_weak = sum(1 for c in challenges if c.get("kind") == "weak")
+    n_garb = overlap_garbage_count(doc)
     if failed_idx:
         idx = failed_idx[0]
         lines.append(
@@ -172,11 +183,11 @@ def format_overlap_check(doc: dict) -> str:
             "experiment: reject the falsified atom (`use` its topic), "
             "re-run overlap, compare with --against"
         )
-    elif n_weak:
+    elif n_garb:
         lines.append(
-            f"observe: WEAK JOIN x{n_weak}; "
-            "reason: do the claims actually share a subject, or is the mention garbage?; "
-            "experiment: reject the unearned join or the atom, then re-run"
+            f"observe: GARBAGE JOIN x{n_garb}; "
+            "reason: mention grounding < 0.5 — name is not in the claim; "
+            "experiment: drop the unearned mention or reject the atom, then re-run"
         )
     elif challenges:
         lines.append(

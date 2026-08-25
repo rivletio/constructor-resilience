@@ -14,7 +14,12 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from .atoms import is_active
-from .mentions import extract_mentions
+from .mentions import (
+    MENTION_GROUND_MIN,
+    extract_mentions,
+    join_grounding,
+    mention_grounding,
+)
 from .search import as_text, greedy_resilient_indices, token_set
 
 Pair = Tuple[int, int]
@@ -159,10 +164,20 @@ def content_affinity(a, b) -> float:
     return max(lex, stem, rare_boost)
 
 
+def _grounded_mention_names(atom) -> set[str]:
+    """Mention names actually attested in the claim (grounding ≥ 0.5)."""
+    text = as_text(atom)
+    return {
+        n
+        for n in _mention_names(atom)
+        if mention_grounding(n, text) >= MENTION_GROUND_MIN
+    }
+
+
 def cross_affinity(a, b) -> float:
-    """Lexical/stem overlap and shared mention names."""
+    """Lexical/stem overlap and *grounded* shared mention names."""
     mention = 0.0
-    ma, mb = _mention_names(a), _mention_names(b)
+    ma, mb = _grounded_mention_names(a), _grounded_mention_names(b)
     if ma and mb:
         mention = len(ma & mb) / len(ma | mb)
         if ma & mb:
@@ -217,9 +232,9 @@ def _active_view(store: dict) -> Tuple[list, Dict[Pair, float], List[int]]:
 _PROMPTS = {
     "tension": "These claims conflict — does this atom still hold?",
     "support": "Does this atom still hold given the other side?",
-    "weak": (
-        "Join is a shared name with little claim overlap — "
-        "are these claims actually compatible, or is the mention garbage?"
+    "garbage": (
+        "Shared mention is not attested in both claims "
+        f"(grounding < {MENTION_GROUND_MIN}) — drop the unearned join"
     ),
     "none": (
         "No counterpart on the other surface — "
@@ -238,6 +253,7 @@ def _challenge_rec(
     other_store_index=None,
     affinity=0.0,
     kind="none",
+    grounding=0.0,
 ) -> dict:
     return {
         "source": src,
@@ -247,6 +263,7 @@ def _challenge_rec(
         "other": other,
         "other_store_index": other_store_index,
         "affinity": round(float(affinity), 3),
+        "grounding": round(float(grounding), 3),
         "kind": kind,
         "tension": kind == "tension",
         "prompt": _PROMPTS[kind],
@@ -298,12 +315,13 @@ def overlap_challenges(
             s = cross_affinity(self_atom, o)
             if s < min_sim:
                 continue
+            g = join_grounding(self_atom, o)
             if claims_tension(self_atom, o):
                 kind = "tension"
-            elif content_affinity(self_atom, o) >= min_sim:
+            elif content_affinity(self_atom, o) >= min_sim or g >= MENTION_GROUND_MIN:
                 kind = "support"
             else:
-                kind = "weak"
+                kind = "garbage"
             rec = _challenge_rec(
                 src=src,
                 store_index=store_index,
@@ -313,13 +331,18 @@ def overlap_challenges(
                 other_store_index=j,
                 affinity=s,
                 kind=kind,
+                grounding=g,
             )
             if kind == "tension":
                 tensions.append(rec)
+            elif kind == "garbage":
+                rest.append(rec)
             else:
                 rest.append(rec)
         tensions.sort(key=lambda r: -r["affinity"])
-        rest.sort(key=lambda r: -r["affinity"])
+        rest.sort(
+            key=lambda r: (0 if r["kind"] == "garbage" else 1, -r["affinity"])
+        )
         hits = tensions + rest[: max(0, max_support)]
         if hits:
             out.extend(hits)
