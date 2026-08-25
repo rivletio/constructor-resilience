@@ -94,7 +94,8 @@ Optional topic field **`visibility`**: `inner` | `circle` | `public` (host-inter
 | `atoms` | Ordered list of **strings or objects**; index is stable for edges |
 | `atoms[].text` | When object: the claim string (search/packet use this) |
 | `atoms[].constraint` | Optional constructor kind: `possibility` \| `impossibility` \| `fact` \| `decision` |
-| `atoms[].mentions` | Joins the packing agent extracts onto the claim: `{name, kind}` with kind `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. Optional locator like atom refs: **file** `path` + `line` / `end_line` + `url` (`path#L42` or `#L42-L48`); **video** `t` / `t_label` / `url` with `&t=`; **article** may reuse `page` / `paragraph` / `excerpt`. **Not** a second graph. CLI: `--mention Name:kind` `--at file.py:42` or `--at t=3033` after `--atom`. |
+| `atoms[].at` | **Where the claim occurred**: same locator keys as mentions (`path`+`line`, `t`, `page`/`paragraph`/`excerpt`, `url`). CLI: `--atom "…" --at t=3033` (before any `--mention`). Draft: `AT:` immediately after `CLAIM`. Travels on packet/share. |
+| `atoms[].mentions` | Joins the packing agent extracts onto the claim: `{name, kind}` with kind `concept` \| `person` \| `org` \| `work` \| `place` \| `other`. Optional locator for **where the name occurred**: **file** `path` + `line` / `end_line` + `url` (`path#L42`); **video** `t` / `t_label` / `url` with `&t=`; **article** `page` / `paragraph` / `excerpt`. CLI: `--mention Name:kind` `--at file.py:42`. Draft: `AT:` after `MENTION`. |
 | `atoms[].refs` | Optional citations. **youtube_video**: `youtube_video_id`, `t` (seconds), `t_label`, `url` with `&t=` (original video). **arxiv**: `id`, `page` + `paragraph` (page 1, paragraph N) + `excerpt` (the quoted passage). `url` opens the original PDF at `#page=N` (works for every paper). `html` adds `#:~:text=` from the excerpt when present. DOI/URL locators can reuse `page`/`paragraph`/`excerpt` later. |
 | `atoms[].provenance` | **HOW it was made** — method, model, source, excerpt (required for mint) |
 | `atoms[].review.status` | `pending` \| `accepted` \| `edited` \| `rejected` |
@@ -131,7 +132,8 @@ Output of `search` / `cache` / `packet --rebuild`.
     {
       "text": "It predicts in latent space rather than tokens.",
       "constraint": "fact",
-      "mentions": [{"name": "JEPA", "kind": "concept"}]
+      "at": {"t": 3033, "t_label": "50:33"},
+      "mentions": [{"name": "JEPA", "kind": "concept", "t": 3100, "t_label": "51:40"}]
     }
   ],
   "atom_count_source": 12
@@ -213,7 +215,8 @@ Output of `coherence share`. Wraps a packet with audience + forward grants. Shar
     {
       "text": "It predicts in latent space rather than tokens.",
       "constraint": "fact",
-      "mentions": [{"name": "JEPA", "kind": "concept"}]
+      "at": {"t": 3033, "t_label": "50:33"},
+      "mentions": [{"name": "JEPA", "kind": "concept", "t": 3100}]
     }
   ],
   "mentions": [{"name": "JEPA", "kind": "concept"}],

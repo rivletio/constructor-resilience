@@ -49,7 +49,7 @@ def traveling_atom(atom: Any) -> dict:
     """
     rec: dict[str, Any] = {"text": atom_text(atom)}
     if isinstance(atom, dict):
-        for k in ("constraint", "mentions", "refs"):
+        for k in ("constraint", "mentions", "refs", "at"):
             v = atom.get(k)
             if v:
                 rec[k] = v
@@ -91,6 +91,7 @@ def make_atom(
     constraint: str | None = None,
     mentions: list | None = None,
     refs: list | None = None,
+    at: dict | None = None,
 ) -> dict:
     from .mentions import (
         extract_mentions,
@@ -130,6 +131,13 @@ def make_atom(
     )
     if mention_list:
         rec["mentions"] = mention_list
+    if at:
+        from .mentions import fill_locator, parse_at_flag
+
+        loc = parse_at_flag(at) if isinstance(at, str) else dict(at)
+        loc = fill_locator(loc)
+        if loc:
+            rec["at"] = loc
     ref_list = refs_for_text(text, refs)
     if ref_list:
         rec["refs"] = ref_list
@@ -165,6 +173,7 @@ def coerce_atom(
         constraint=item.get("constraint"),
         mentions=item.get("mentions"),
         refs=item.get("refs") if "refs" in item else None,
+        at=item.get("at"),
         extra=item.get("extra") if isinstance(item.get("extra"), dict) else None,
     )
     if isinstance(item.get("review"), dict):

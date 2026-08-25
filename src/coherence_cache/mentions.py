@@ -330,6 +330,26 @@ def normalize_mention(item: Any) -> dict | None:
     return rec
 
 
+def fill_locator(rec: dict[str, Any]) -> dict[str, Any]:
+    """Normalize file/video/article locator keys and clickable url/label."""
+    return _fill_mention_locator(rec)
+
+
+def locator_label(rec: dict | None) -> str:
+    """Short where-string for logs: path:line, t=label, or url."""
+    if not isinstance(rec, dict):
+        return ""
+    if rec.get("label"):
+        return str(rec["label"])
+    if rec.get("t_label"):
+        return f"t={rec['t_label']}"
+    if rec.get("t") is not None:
+        return f"t={rec['t']}"
+    if rec.get("url"):
+        return str(rec["url"])
+    return ""
+
+
 def _fill_mention_locator(rec: dict[str, Any]) -> dict[str, Any]:
     if rec.get("path") and not rec.get("url"):
         rec["url"] = file_line_url(rec["path"], rec.get("line"), rec.get("end_line"))
@@ -462,11 +482,15 @@ def parse_pack_draft(blob: str, default_constraint: str | None = "fact") -> tupl
             if mentions and val:
                 mentions[-1].setdefault("aliases", []).append(val)
         elif key == "AT" and current is not None:
-            mentions = current.get("mentions") or []
             loc = parse_at_flag(val)
-            if loc and mentions:
+            if not loc:
+                continue
+            mentions = current.get("mentions") or []
+            if mentions:
                 mentions[-1].update(loc)
                 current["mentions"][-1] = _fill_mention_locator(mentions[-1])
+            else:
+                current["at"] = _fill_mention_locator(loc)
     for it in items:
         if not it.get("mentions"):
             it.pop("mentions", None)

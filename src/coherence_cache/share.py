@@ -197,6 +197,7 @@ def receive_as_topic_store(share: dict, *, receiver_id: str) -> dict:
             mentions=a.get("mentions") if isinstance(a, dict) else None,
             refs=a.get("refs") if isinstance(a, dict) else None,
             constraint=a.get("constraint") if isinstance(a, dict) else None,
+            at=a.get("at") if isinstance(a, dict) else None,
         )
         atoms.append(rec)
     cons = {f"{i},{i+1}": 0.55 for i in range(max(0, len(atoms) - 1))}

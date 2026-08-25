@@ -182,6 +182,13 @@ def test_ungrounded_mention_fails_check():
         "mentions": [{"name": "JEPA", "kind": "concept"}],
     }
     assert not any("not attested" in f or f.startswith("anaphor") for f in check_atom(ok))
+    path_only = {
+        "text": "JEPA predicts in latent space rather than tokens.",
+        "constraint": "fact",
+        "mentions": [{"name": "JEPA", "kind": "concept"}],
+        "at": {"path": "notes.md"},
+    }
+    assert any("claim has path but no line" in f for f in check_atom(path_only))
 
 
 def test_anaphor_with_mention_on_atom_passes():

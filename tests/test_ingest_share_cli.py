@@ -215,6 +215,55 @@ def test_pack_mention_at_file_line_and_timestamp(tmp_path, capsys):
     assert "qCbfTN-caFI" in m1["url"] and "t=3033" in m1["url"]
 
 
+def test_pack_claim_at_and_mention_at(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Where",
+        "--constraint",
+        "fact",
+        "--atom",
+        "It predicts in latent space rather than tokens.",
+        "--at",
+        "t=3033",
+        "--mention",
+        "JEPA:concept",
+        "--at",
+        "t=3100",
+    )
+    store = _load(root / "topics" / "where" / "atoms.json")
+    rec = store["atoms"][0]
+    assert rec["at"]["t"] == 3033
+    assert rec["mentions"][0]["t"] == 3100
+    packet = _load(root / "topics" / "where" / "packet.json")
+    prec = packet["atoms"][0]
+    assert prec["at"]["t"] == 3033
+    assert prec["mentions"][0]["t"] == 3100
+    capsys.readouterr()
+    _run(root, "share", "--to", "alice")
+    share = _load(root / "topics" / "where" / "share.json")
+    s0 = share["atoms"][0]
+    assert s0["at"]["t"] == 3033
+    assert s0["mentions"][0]["t"] == 3100
+
+    from coherence_cache.mentions import parse_pack_draft
+
+    _title, items = parse_pack_draft(
+        """
+        TITLE: Draft where
+        CONSTRAINT: fact
+        CLAIM: It predicts in latent space rather than tokens.
+        AT: t=3033
+        MENTION: JEPA:concept
+        AT: t=3100
+        """
+    )
+    assert items[0]["at"]["t"] == 3033
+    assert items[0]["mentions"][0]["t"] == 3100
+
+
 def test_pack_draft_and_forgiving_locators(tmp_path, capsys):
     from coherence_cache.mentions import parse_at_flag, parse_mention_flag, parse_pack_draft
 

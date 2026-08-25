@@ -32,7 +32,7 @@ from .atoms import (
     set_review,
     traveling_atom,
 )
-from .mentions import parse_at_flag, parse_mention_flag, parse_pack_draft
+from .mentions import locator_label, parse_at_flag, parse_mention_flag, parse_pack_draft
 from .search import token_set
 
 extract_references = _refs_mod.extract_references
@@ -358,7 +358,7 @@ def cmd_add_atom(args):
 
 
 class ClaimParts(argparse.Action):
-    """``--atom`` then ``--mention Name[:kind]`` then ``--at`` locator on that join."""
+    """``--atom`` then ``--at`` (claim) then ``--mention`` then ``--at`` (join)."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         bag = getattr(namespace, "claim_parts", None)
@@ -376,11 +376,16 @@ class ClaimParts(argparse.Action):
                 bag[-1].setdefault("mentions", []).append(rec)
             return
         if option_string == "--at":
-            if not bag or not (bag[-1].get("mentions") or []):
-                parser.error("--at requires a preceding --mention")
+            if not bag:
+                parser.error("--at requires a preceding --atom")
             loc = parse_at_flag(values)
-            if loc:
-                bag[-1]["mentions"][-1].update(loc)
+            if not loc:
+                return
+            mentions = bag[-1].get("mentions") or []
+            if mentions:
+                mentions[-1].update(loc)
+            else:
+                bag[-1]["at"] = {**(bag[-1].get("at") or {}), **loc}
 
 
 def _load_draft(args) -> None:
@@ -514,7 +519,9 @@ def cmd_pack(args):
     doc = load_json(packet_path, {}) or {}
     print(f"packed {active['topic_id']}  size={len(doc.get('atoms') or [])}")
     for i, a in enumerate(doc.get("atoms") or []):
-        print(f"  [{i}] {atom_text(a)}")
+        where = locator_label(a.get("at") if isinstance(a, dict) else None)
+        loc = f"  @ {where}" if where else ""
+        print(f"  [{i}] {atom_text(a)}{loc}")
     from .check import format_check
 
     print(format_check(store))
@@ -2008,7 +2015,7 @@ def main(argv=None):
         action=ClaimParts,
         dest="claim_parts",
         metavar="LOC",
-        help="Locator on the preceding --mention: file.py:42, file.py#L42-L48, t=3033, or a URL",
+        help="Where: after --atom locates the claim; after --mention locates the join (file.py:42, t=3033, URL)",
     )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument(
@@ -2061,7 +2068,7 @@ def main(argv=None):
         action=ClaimParts,
         dest="claim_parts",
         metavar="LOC",
-        help="Locator on the preceding --mention: file.py:42, file.py#L42-L48, t=3033, or a URL",
+        help="Where: after --atom locates the claim; after --mention locates the join (file.py:42, t=3033, URL)",
     )
     p_pack.add_argument("--json", help="Path to claims JSON")
     p_pack.add_argument(

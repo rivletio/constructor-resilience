@@ -62,6 +62,13 @@ def check_atom(atom: Any) -> list[str]:
         url = str(m.get("url") or "")
         if ("youtube.com" in url or "youtu.be/" in url) and m.get("t") is None:
             fails.append(f"mention {name!r} YouTube URL missing t=")
+    at = rec.get("at") if isinstance(rec.get("at"), dict) else None
+    if at:
+        if at.get("path") and not at.get("line"):
+            fails.append("claim has path but no line")
+        curl = str(at.get("url") or "")
+        if ("youtube.com" in curl or "youtu.be/" in curl) and at.get("t") is None:
+            fails.append("claim YouTube URL missing t=")
     if _CITE_IN_TEXT.search(text or "") and not (rec.get("refs") or []):
         fails.append("citation in text but no refs")
     return fails
