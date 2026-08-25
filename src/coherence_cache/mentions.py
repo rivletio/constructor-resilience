@@ -457,9 +457,18 @@ def parse_pack_draft(blob: str, default_constraint: str | None = "fact") -> tupl
         line = raw.strip()
         if not line:
             continue
+        numbered = re.match(r"^(\d+)[\.)]?\s+(\S.*)$", line)
+        if numbered and not re.match(r"^\d+:", line):
+            current = {"text": numbered.group(2).strip(), "mentions": []}
+            if constraint:
+                current["constraint"] = constraint
+            items.append(current)
+            continue
         if ":" not in line:
             if current and current.get("text"):
                 current["text"] = current["text"] + " " + line
+            elif title is None and line[0].isalnum():
+                title = line
             continue
         key, val = line.split(":", 1)
         key = key.strip().upper()

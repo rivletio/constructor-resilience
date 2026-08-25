@@ -263,6 +263,23 @@ def test_pack_claim_at_and_mention_at(tmp_path, capsys):
     assert items[0]["at"]["t"] == 3033
     assert items[0]["mentions"][0]["t"] == 3100
 
+    title2, items2 = parse_pack_draft(
+        "RWKV-7 Goose\n"
+        "CONSTRAINT: fact\n"
+        "1 RWKV-7 Goose is a constant-time sequence model.\n"
+        "AT: paper.md:4\n"
+        "MENTION: RWKV-7:work\n"
+        "2 Softmax attention incurs quadratic cost.\n"
+        "AT: paper.md:15\n"
+        "MENTION: attention:concept\n"
+    )
+    assert title2 == "RWKV-7 Goose"
+    assert len(items2) == 2
+    assert "constant-time" in items2[0]["text"]
+    assert items2[0]["mentions"][0]["name"] == "RWKV-7"
+    assert items2[1]["at"]["path"] == "paper.md"
+    assert items2[1]["at"]["line"] == 15
+
 
 def test_pack_draft_and_forgiving_locators(tmp_path, capsys):
     from coherence_cache.mentions import parse_at_flag, parse_mention_flag, parse_pack_draft
