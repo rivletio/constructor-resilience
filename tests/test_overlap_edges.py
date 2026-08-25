@@ -149,6 +149,21 @@ def test_mention_grounding_score():
     assert mention_grounding("AI", "mainly at dusk and dawn.") == 0.0
     assert mention_grounding("JEPA", "Domestic cats hunt primarily at dusk and dawn.") == 0.0
     assert mention_grounding("JEPA", "Domestic cats hunt primarily at dusk and dawn.") < MENTION_GROUND_MIN
+    # Counterfactual: name as initials of a title-case phrase, not the string.
+    assert mention_grounding(
+        "JEPA",
+        "Joint Embedding Predictive Architecture predicts in latent space rather than tokens.",
+    ) == 1.0
+    # Anaphora is not attestation (claim is not stand-alone).
+    assert mention_grounding("JEPA", "It predicts in latent space rather than tokens.") == 0.0
+    # Alias in the claim counts as the name.
+    assert mention_grounding(
+        "JEPA",
+        "The joint embedding predictive architecture predicts in latent space.",
+        aliases=["joint embedding predictive architecture"],
+    ) == 1.0
+    # Locator-style claim without the name is still ungrounded.
+    assert mention_grounding("JEPA", "See the original talk at t=3033 for the claim.") == 0.0
 
 
 def test_ungrounded_mention_fails_check():

@@ -198,12 +198,18 @@ def test_pack_draft_and_forgiving_locators(tmp_path, capsys):
         CLAIM: RWKV-7 Goose uses constant memory per token.
         MENTION: RWKV-7:work
         AT: p.1 ¶1
+        CLAIM: The joint embedding predictive architecture predicts in latent space rather than tokens.
+        MENTION: JEPA:concept
+        ALIAS: joint embedding predictive architecture
         """
     )
     assert title == "Check atom"
     assert items[0]["mentions"][0]["line"] == 20
     assert items[1]["mentions"][0]["page"] == 1
     assert items[1]["mentions"][0]["paragraph"] == 1
+    assert items[2]["mentions"][0]["aliases"] == [
+        "joint embedding predictive architecture"
+    ]
 
     draft = tmp_path / "pack.txt"
     draft.write_text(

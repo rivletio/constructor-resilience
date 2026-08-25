@@ -38,12 +38,16 @@ VALID_MENTION_KIND = frozenset(
 )
 
 # A mention is garbage when it is not attested in the claim.
-# grounding = max(compact_hit, token_cover) in [0, 1]
+# grounding = max(compact_hit, token_cover, initialism_hit) in [0, 1]
 #   compact_hit: 1 if compact(name) (len≥3) is a substring of compact(text)
 #                (hyphens/spaces dropped: "V-JEPA" → "vjepa" contains "jepa")
 #   token_cover: fraction of name tokens (len≥2) that hit the text
-#                (exact, simple stem, or prefix/suffix within 2 chars)
-# Threshold 0.5 = at least half the name tokens, or a compact substring.
+#   initialism_hit: 1 if compact(name) equals initials of a title-case phrase
+#                in the claim ("Joint Embedding Predictive Architecture" → JEPA)
+# Aliases are scored the same way as the name.
+# Anaphora ("It predicts…") is not attestation — the claim is not stand-alone.
+# A locator is not attestation — it pins an artifact, not this sentence.
+# Threshold 0.5 = at least half the name tokens, or compact/initialism hit.
 MENTION_GROUND_MIN = 0.5
 
 
@@ -95,6 +99,18 @@ def mention_grounding(
     return best
 
 
+def _phrase_initialisms(text: str) -> set[str]:
+    """Initials of title-case runs in ``text`` (JEPA ← Joint Embedding …)."""
+    out: set[str] = set()
+    for m in re.finditer(
+        r"\b[A-Z][a-z0-9]*(?:\s+[A-Z][a-z0-9]*)+\b", text or ""
+    ):
+        words = m.group(0).split()
+        if 2 <= len(words) <= 8:
+            out.add("".join(w[0] for w in words).lower())
+    return out
+
+
 def _ground_one(name: str, text: str) -> float:
     cn, ct = _compact_alnum(name), _compact_alnum(text)
     ntoks = {t for t in _word_tokens(name) if len(t) >= 2}
@@ -111,6 +127,8 @@ def _ground_one(name: str, text: str) -> float:
                 scores.append(1.0)
                 break
     elif cn and cn in ttoks:
+        scores.append(1.0)
+    if cn and 2 <= len(cn) <= 8 and cn in _phrase_initialisms(text):
         scores.append(1.0)
     return max(scores) if scores else 0.0
 
@@ -347,6 +365,10 @@ def parse_pack_draft(blob: str, default_constraint: str | None = "fact") -> tupl
             rec = parse_mention_flag(val)
             if rec:
                 current.setdefault("mentions", []).append(rec)
+        elif key == "ALIAS" and current is not None:
+            mentions = current.get("mentions") or []
+            if mentions and val:
+                mentions[-1].setdefault("aliases", []).append(val)
         elif key == "AT" and current is not None:
             mentions = current.get("mentions") or []
             loc = parse_at_flag(val)
