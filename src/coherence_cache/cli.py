@@ -19,6 +19,7 @@ from .atoms import (
     REVIEW_PENDING,
     VALID_REVIEW,
     active_atoms,
+    is_active,
     atom_review_status,
     atom_text,
     atom_texts,
@@ -29,6 +30,7 @@ from .atoms import (
     normalize_store_atoms,
     parse_ingest_payload,
     set_review,
+    traveling_atom,
 )
 from .mentions import parse_at_flag, parse_mention_flag, parse_pack_draft
 from .search import token_set
@@ -512,7 +514,7 @@ def cmd_pack(args):
     doc = load_json(packet_path, {}) or {}
     print(f"packed {active['topic_id']}  size={len(doc.get('atoms') or [])}")
     for i, a in enumerate(doc.get("atoms") or []):
-        print(f"  [{i}] {a}")
+        print(f"  [{i}] {atom_text(a)}")
     from .check import format_check
 
     print(format_check(store))
@@ -531,21 +533,14 @@ def cmd_share(args):
             raise SystemExit("No active atoms to share")
         packet_path = Path(rebuilt)
     packet = load_json(packet_path, {}) or {}
-    texts = [atom_text(a) for a in (packet.get("atoms") or [])]
-    if not texts:
+    packet_atoms = packet.get("atoms") or []
+    if not packet_atoms:
         raise SystemExit("Packet is empty — run: coherence search --greedy")
-
-    # Join mentions from the source atoms (by text match)
-    source_atoms = []
-    full = store.get("atoms") or []
-    by_text = {atom_text(a): a for a in full}
-    for t in texts:
-        source_atoms.append(by_text.get(t, t))
 
     share = make_share(
         from_id=args.from_id,
         to_id=args.to,
-        atoms=source_atoms,
+        atoms=packet_atoms,
         audience=args.audience,
         forward=args.forward,
         note=args.note or "",
@@ -566,7 +561,7 @@ def cmd_share(args):
         f"atoms={len(share['atoms'])} mentions={len(share.get('mentions') or [])}"
     )
     for i, a in enumerate(share["atoms"]):
-        print(f"  [{i}] {a}")
+        print(f"  [{i}] {atom_text(a)}")
 
 
 def cmd_import(args):
@@ -1001,15 +996,29 @@ def build_packet_doc(
     redundancy_scale: float,
     query: str | None = None,
 ) -> dict:
-    """First-class packet artifact for agent/person handoff."""
-    texts = atom_texts(atoms)
-    selected_texts = [atom_text(s) for s in selected]
+    """First-class packet artifact for agent/person handoff.
+
+    Each atom travels as text plus joins (mentions/refs/constraint), so a
+    pronoun claim stays bound to its name after share.
+    """
+    used: set[int] = set()
+    records = []
     indices = []
-    for s in selected_texts:
-        try:
-            indices.append(texts.index(s))
-        except ValueError:
+    for s in selected:
+        st = atom_text(s)
+        found = None
+        for i, a in enumerate(atoms):
+            if i in used or not is_active(a):
+                continue
+            if atom_text(a) == st:
+                found = i
+                break
+        if found is None:
+            records.append(traveling_atom(s))
             continue
+        used.add(found)
+        indices.append(found)
+        records.append(traveling_atom(atoms[found]))
     return {
         "version": 1,
         "kind": "resilient_packet",
@@ -1021,7 +1030,7 @@ def build_packet_doc(
         "redundancy_scale": float(redundancy_scale),
         "query": query,
         "atom_indices": indices,
-        "atoms": selected_texts,
+        "atoms": records,
         "atom_count_source": len(atoms),
     }
 
@@ -1087,7 +1096,7 @@ def cmd_packet(args):
     doc = load_json(packet_path, {})
     print(f"topic={doc.get('topic_id')} method={doc.get('method')} E={doc.get('energy')} size={len(doc.get('atoms') or [])}")
     for i, a in enumerate(doc.get("atoms") or []):
-        print(f"  [{i}] {a}")
+        print(f"  [{i}] {atom_text(a)}")
 
 
 def cmd_search(args):

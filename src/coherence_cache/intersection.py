@@ -18,7 +18,7 @@ from .mentions import (
     MENTION_GROUND_MIN,
     extract_mentions,
     join_grounding,
-    mention_grounding,
+    mention_attested_score,
 )
 from .search import as_text, greedy_resilient_indices, token_set
 
@@ -165,12 +165,11 @@ def content_affinity(a, b) -> float:
 
 
 def _grounded_mention_names(atom) -> set[str]:
-    """Mention names actually attested in the claim (grounding ≥ 0.5)."""
-    text = as_text(atom)
+    """Names attested in the claim text, or filling an anaphor on this atom."""
     return {
         n
         for n in _mention_names(atom)
-        if mention_grounding(n, text) >= MENTION_GROUND_MIN
+        if mention_attested_score(n, atom) >= MENTION_GROUND_MIN
     }
 
 

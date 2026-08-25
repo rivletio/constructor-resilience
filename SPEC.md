@@ -127,10 +127,18 @@ Output of `search` / `cache` / `packet --rebuild`.
   "redundancy_scale": 2.0,
   "query": null,
   "atom_indices": [0, 3, 5],
-  "atoms": ["…ordered working set…"],
+  "atoms": [
+    {
+      "text": "It predicts in latent space rather than tokens.",
+      "constraint": "fact",
+      "mentions": [{"name": "JEPA", "kind": "concept"}]
+    }
+  ],
   "atom_count_source": 12
 }
 ```
+
+Each packet atom is the traveling claim: `text` plus `mentions` / `refs` / `constraint`. Hosts MUST accept strings for older packets. Search still runs on `text`.
 
 Energy model: coverage + support − redundancy (see `docs/qubo-formulation.md`).
 
@@ -177,7 +185,7 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
 
 Packet `kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` (`kind: none`) asks whether that atom still holds without the other surface.
 
-Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claim-text overlap **or** a shared mention with `grounding ≥ 0.5`), `garbage` (shared name with `grounding < 0.5` — unearned tag), `none` (one-sided). `grounding` is `max(compact_hit, token_cover, initialism_hit)` (aliases scored the same way). Compact form (hyphens/spaces stripped, length ≥ 3) as a substring of the compact claim; fraction of name tokens attested in the claim; or compact(name) equals the initials of a title-case phrase in the claim (`Joint Embedding Predictive Architecture` → `JEPA`). Anaphora (`It predicts…`) and locators are not attestation. Below 0.5 the mention is garbage: it does not count toward overlap affinity, and `coherence check` FAILs the atom. If the claim uses `It` / `the same`, the FAIL is `anaphor: rewrite the claim so 'JEPA' appears`. Otherwise `mention 'JEPA' not attested (0.00); put the name or ALIAS in the sentence, or drop the join`. Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
+Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claim-text overlap **or** a shared mention with `grounding ≥ 0.5`), `garbage` (shared name with `grounding < 0.5` — unearned tag), `none` (one-sided). `grounding` is `max(compact_hit, token_cover, initialism_hit)` (aliases scored the same way). Compact form (hyphens/spaces stripped, length ≥ 3) as a substring of the compact claim; fraction of name tokens attested in the claim; or compact(name) equals the initials of a title-case phrase in the claim (`Joint Embedding Predictive Architecture` → `JEPA`). Locators are not attestation. Anaphor (`It predicts…`) **is** attested when that mention hangs on the same atom (packet/share carry the join). Score 0.6. Below 0.5 otherwise: `mention 'JEPA' not attested (0.00); put the name or ALIAS in the sentence, or drop the join`. Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
 
 Hosts SHOULD re-run overlap after reject/revise, then diff with `--against previous.json` (reconstructed set vs old). Stop at a fixed point with no remaining `tension`.
 
@@ -201,7 +209,13 @@ Output of `coherence share`. Wraps a packet with audience + forward grants. Shar
   "shared_at": "2026-08-23T00:00:00Z",
   "note": "",
   "topic_id": "demo-interest",
-  "atoms": ["…packet texts…"],
+  "atoms": [
+    {
+      "text": "It predicts in latent space rather than tokens.",
+      "constraint": "fact",
+      "mentions": [{"name": "JEPA", "kind": "concept"}]
+    }
+  ],
   "mentions": [{"name": "JEPA", "kind": "concept"}],
   "content_refs": [{"kind": "url", "url": "https://…"}],
   "packet": { "atom_indices": [0, 3, 5], "method": "greedy" }
@@ -212,8 +226,8 @@ Output of `coherence share`. Wraps a packet with audience + forward grants. Shar
 |-------|------|
 | `audience` | `direct` \| `circle` \| `public` |
 | `forward` | `none` \| `circle` \| `public` — **never escalates** past audience |
-| `atoms` | Packet texts (strings) |
-| `mentions` / `content_refs` | Joins + citations copied from the packet |
+| `atoms` | Packet claims as objects (`text` + `mentions` / `refs` / `constraint`). Strings still valid. |
+| `mentions` / `content_refs` | Union bag of joins + citations (also copied onto each atom) |
 | Import | `coherence import share.json` materializes a topic; claim text stays clean; grant metadata lives on `store.share` |
 
 ---

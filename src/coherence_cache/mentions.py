@@ -100,21 +100,66 @@ def claim_has_referential_anaphor(text: str) -> bool:
     return bool(_PRONOUN_SUBJ.match(t) or _ANAPHOR_SLOT.search(t))
 
 
+def declared_mention_names(atom) -> set[str]:
+    """Names hung on the structured record (not extracted from prose)."""
+    out: set[str] = set()
+    if not isinstance(atom, dict):
+        return out
+    for m in atom.get("mentions") or []:
+        if isinstance(m, dict):
+            n = str(m.get("name") or "").strip().lower()
+            for al in m.get("aliases") or []:
+                if str(al).strip():
+                    out.add(str(al).strip().lower())
+        else:
+            n = str(m).strip().lower()
+        if n:
+            out.add(n)
+    return out
+
+
+def mention_attested_score(
+    name: str,
+    atom,
+    *,
+    aliases: list | None = None,
+) -> float:
+    """Grounding in the sentence, or 0.6 if this atom's mention fills an anaphor."""
+    if isinstance(atom, dict):
+        text = str(atom.get("text") or "")
+        als = aliases if aliases is not None else None
+        if als is None:
+            for m in atom.get("mentions") or []:
+                if isinstance(m, dict) and str(m.get("name") or "").strip().lower() == str(name).strip().lower():
+                    als = m.get("aliases")
+                    break
+    else:
+        text = str(atom or "")
+        als = aliases
+    g = mention_grounding(name, text, aliases=als)
+    if g >= MENTION_GROUND_MIN:
+        return g
+    if claim_has_referential_anaphor(text) and str(name).strip().lower() in declared_mention_names(
+        atom if isinstance(atom, dict) else {"mentions": [{"name": name}]}
+    ):
+        return 0.6
+    return g
+
+
 def mention_attestation_fail(
     name: str,
-    text: str,
+    atom,
     *,
     aliases: list | None = None,
 ) -> str | None:
-    """Actionable FAIL if ``name`` is not attested in ``text``, else None."""
-    g = mention_grounding(name, text, aliases=aliases)
+    """Actionable FAIL if ``name`` is not attested on this atom, else None.
+
+    Anaphor is attested when the mention hangs on this atom: packet/share
+    carry that join with the claim.
+    """
+    g = mention_attested_score(name, atom, aliases=aliases)
     if g >= MENTION_GROUND_MIN:
         return None
-    if claim_has_referential_anaphor(text):
-        return (
-            f"anaphor: rewrite the claim so {name!r} appears "
-            f"(not 'it'/'the same')"
-        )
     return (
         f"mention {name!r} not attested ({g:.2f}); "
         f"put the name or ALIAS in the sentence, or drop the join"
@@ -215,7 +260,7 @@ def join_grounding(a, b) -> float:
         return 0.0
     best = 0.0
     for n in shared:
-        g = min(mention_grounding(n, ta), mention_grounding(n, tb))
+        g = min(mention_attested_score(n, a), mention_attested_score(n, b))
         if g > best:
             best = g
     return best

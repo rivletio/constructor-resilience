@@ -54,7 +54,7 @@ def check_atom(atom: Any) -> list[str]:
         if not isinstance(m, dict):
             continue
         name = m.get("name") or "?"
-        att = mention_attestation_fail(name, text, aliases=m.get("aliases"))
+        att = mention_attestation_fail(name, rec, aliases=m.get("aliases"))
         if att:
             fails.append(att)
         if m.get("path") and not m.get("line"):
@@ -96,12 +96,7 @@ def format_check(store: dict) -> str:
     if failed_idx:
         idx = failed_idx[0]
         first = next(f[0] for i, f in rows if i == idx and f)
-        if first.startswith("anaphor"):
-            exp = (
-                f"coherence reject {idx} --reason \"anaphor\" "
-                "then pack the claim with the name in the sentence"
-            )
-        elif "not attested" in first:
+        if "not attested" in first:
             exp = (
                 f"coherence reject {idx} --reason \"mention not attested\" "
                 "then put the name or ALIAS in the sentence, or drop the join"

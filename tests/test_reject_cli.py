@@ -43,7 +43,10 @@ def test_cli_reject_backs_out_accepted_atom_and_rebuilds_packet(tmp_path, capsys
     )
     _run(root, "search", "--greedy", "--max-size", "6")
     packet_before = _load(topic / "packet.json")
-    assert any("Perpetual motion" in a for a in packet_before["atoms"])
+    def _pt(a):
+        return a if isinstance(a, str) else a.get("text", "")
+
+    assert any("Perpetual motion" in _pt(a) for a in packet_before["atoms"])
 
     capsys.readouterr()
     _run(
@@ -66,8 +69,8 @@ def test_cli_reject_backs_out_accepted_atom_and_rebuilds_packet(tmp_path, capsys
     assert "Perpetual motion" in bad["text"]
 
     packet = _load(topic / "packet.json")
-    assert not any("Perpetual motion" in a for a in packet["atoms"])
-    assert any("resilient packet" in a for a in packet["atoms"])
+    assert not any("Perpetual motion" in _pt(a) for a in packet["atoms"])
+    assert any("resilient packet" in _pt(a) for a in packet["atoms"])
     # Indices in the store stay put; packet atom_indices must not point at the rejected row.
     assert 1 not in (packet.get("atom_indices") or [])
 

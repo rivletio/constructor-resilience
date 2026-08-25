@@ -46,10 +46,12 @@ def make_share(
         elif audience == "circle" and forward == "public":
             forward = "circle"
 
+    from .atoms import traveling_atom
     from .mentions import mentions_from_atoms
     from .search import as_text
 
-    texts = [as_text(a) for a in atoms]
+    records = [traveling_atom(a) for a in atoms]
+    texts = [as_text(a) for a in records]
     doc = {
         "version": 1,
         "kind": "intentional_share",
@@ -61,9 +63,9 @@ def make_share(
         "shared_at": now_iso(),
         "note": note,
         "topic_id": topic_id,
-        "atoms": texts,
+        "atoms": records,
         "content_refs": content_refs or extract_content_refs(atoms),
-        "mentions": mentions_from_atoms(atoms),
+        "mentions": mentions_from_atoms(records),
         "provenance": [{"source": from_id, "text": t} for t in texts],
     }
     return doc

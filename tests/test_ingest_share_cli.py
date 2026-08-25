@@ -72,7 +72,8 @@ def test_ingest_share_import_roundtrip(tmp_path, capsys):
     assert share["kind"] == "intentional_share"
     assert share["to"] == "alice"
     assert share["atoms"]
-    assert all(isinstance(a, str) for a in share["atoms"])
+    assert all(isinstance(a, dict) and "text" in a for a in share["atoms"])
+    assert any((a.get("mentions") or []) for a in share["atoms"])
 
     _run(
         root,
@@ -113,7 +114,39 @@ def test_pack_from_empty_store_writes_packet(tmp_path, capsys):
     assert store["atoms"][0]["review"]["status"] == "accepted"
     packet = _load(topic / "packet.json")
     assert packet["atoms"]
-    assert "Packets are the share unit" in packet["atoms"][0]
+    a0 = packet["atoms"][0]
+    blob = a0 if isinstance(a0, str) else a0.get("text", "")
+    assert "Packets are the share unit" in blob
+
+
+def test_packet_and_share_keep_mentions_on_each_claim(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Join travels",
+        "--constraint",
+        "fact",
+        "--atom",
+        "It predicts in latent space rather than tokens.",
+        "--mention",
+        "JEPA:concept",
+    )
+    topic = root / "topics" / "join-travels"
+    packet = _load(topic / "packet.json")
+    rec = packet["atoms"][0]
+    assert isinstance(rec, dict)
+    assert rec["text"].startswith("It predicts")
+    assert rec["mentions"][0]["name"] == "JEPA"
+    capsys.readouterr()
+    _run(root, "share", "--to", "alice", "--audience", "circle")
+    share = _load(topic / "share.json")
+    s0 = share["atoms"][0]
+    assert isinstance(s0, dict)
+    assert s0["mentions"][0]["name"] == "JEPA"
+    imported_names = {m["name"] for m in (share.get("mentions") or [])}
+    assert "JEPA" in imported_names
 
 
 def test_pack_mention_flag_joins_last_atom(tmp_path, capsys):

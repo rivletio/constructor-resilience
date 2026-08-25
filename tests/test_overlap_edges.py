@@ -184,16 +184,15 @@ def test_ungrounded_mention_fails_check():
     assert not any("not attested" in f or f.startswith("anaphor") for f in check_atom(ok))
 
 
-def test_anaphor_fail_says_rewrite_with_the_name():
-    from coherence_cache.check import check_atom, format_check
+def test_anaphor_with_mention_on_atom_passes():
+    from coherence_cache.check import check_atom
 
     atom = {
         "text": "It predicts in latent space rather than tokens.",
         "constraint": "fact",
         "mentions": [{"name": "JEPA", "kind": "concept"}],
     }
-    fails = check_atom(atom)
-    assert any(f.startswith("anaphor:") and "JEPA" in f for f in fails)
+    assert check_atom(atom) == []
     dummy = {
         "text": "It is important to pack stand-alone claims about packets.",
         "constraint": "fact",
@@ -201,9 +200,6 @@ def test_anaphor_fail_says_rewrite_with_the_name():
     }
     dfails = check_atom(dummy)
     assert any("not attested" in f for f in dfails)
-    assert not any(f.startswith("anaphor:") for f in dfails)
-    printed = format_check({"atoms": [atom]})
-    assert "rewrite" in printed and "name in the sentence" in printed
 
 
 def test_garbage_mention_does_not_create_overlap():

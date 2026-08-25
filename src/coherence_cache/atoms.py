@@ -41,6 +41,21 @@ def atom_texts(atoms: list) -> list[str]:
     return [atom_text(a) for a in atoms]
 
 
+def traveling_atom(atom: Any) -> dict:
+    """Claim as it must travel in packet/share: text plus joins.
+
+    Review/provenance stay on the store. Mentions and refs stay on the claim
+    so anaphor (`It predicts…` + JEPA) remains bound after handoff.
+    """
+    rec: dict[str, Any] = {"text": atom_text(atom)}
+    if isinstance(atom, dict):
+        for k in ("constraint", "mentions", "refs"):
+            v = atom.get(k)
+            if v:
+                rec[k] = v
+    return rec
+
+
 def atom_review_status(atom: Any) -> str:
     if isinstance(atom, dict):
         st = (atom.get("review") or {}).get("status") or REVIEW_ACCEPTED
