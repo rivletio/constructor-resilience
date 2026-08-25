@@ -1847,14 +1847,20 @@ def cmd_intersect(args):
         f"{label}  E={doc.get('energy')}  size={len(doc.get('atoms') or [])}  "
         f"mine={doc.get('n_mine')} theirs={doc.get('n_theirs')}"
     )
+    prov = doc.get("provenance") or []
     for i, a in enumerate(doc.get("atoms") or []):
-        src = "?"
-        for p in doc.get("provenance") or []:
-            if p.get("text") == a:
-                src = p.get("source", "?")
-                break
+        src = prov[i].get("source", "?") if i < len(prov) else "?"
         print(f"  [{i}] ({src}) {a}")
     print(format_overlap_check(doc))
+    against = getattr(args, "against", None)
+    if against:
+        prev = load_json(Path(against))
+        if not prev:
+            raise SystemExit(f"Missing previous packet: {against}")
+        from .check import format_overlap_compare
+        from .intersection import compare_overlap
+
+        print(format_overlap_compare(compare_overlap(prev, doc)))
 
 
 def cmd_check(args):
@@ -1863,7 +1869,7 @@ def cmd_check(args):
         check_store,
         format_check,
         format_overlap_check,
-        overlap_fail_count,
+        overlap_unresolved_count,
     )
 
     packet_arg = getattr(args, "packet", None)
@@ -1887,7 +1893,7 @@ def cmd_check(args):
                 raise SystemExit(1)
             return
         print(format_overlap_check(doc))
-        if overlap_fail_count(doc):
+        if overlap_unresolved_count(doc):
             raise SystemExit(1)
         return
 
@@ -2316,6 +2322,11 @@ def main(argv=None):
         p.add_argument("--redundancy-scale", type=float, default=2.0)
         p.add_argument("--allow-one-sided", action="store_true")
         p.add_argument("--out", default=None, help="Write overlap packet JSON")
+        p.add_argument(
+            "--against",
+            default=None,
+            help="Previous overlap JSON to diff after reconstruct",
+        )
         if not union_default:
             p.add_argument(
                 "--union",

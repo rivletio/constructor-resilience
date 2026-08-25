@@ -64,6 +64,7 @@ coherence import ./their-atoms.json --title "Lex public" --use
 coherence intersect my-ai-interests lex-public --query consciousness --max-size 8
 coherence union my-ai-interests lex-public --out /tmp/union.json
 coherence check --packet /tmp/union.json
+coherence intersect my-ai-interests lex-public --out /tmp/o2.json --against /tmp/union.json
 ```
 
 ### Library

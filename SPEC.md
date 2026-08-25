@@ -163,6 +163,8 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
       "other": "…",
       "other_store_index": 2,
       "affinity": 0.71,
+      "kind": "support",
+      "tension": false,
       "prompt": "Does this atom still hold given the other side?"
     }
   ],
@@ -173,9 +175,11 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
 }
 ```
 
-`kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` asks whether that atom still holds without the other surface. `"tension": true` means the counterpart looks like a polarity conflict — the loop should treat that as a falsification challenge, not corroboration.
+Packet `kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` (`kind: none`) asks whether that atom still holds without the other surface.
 
-Hosts SHOULD re-run overlap when the user changes topic dials, seed query, max size, or ∩ vs ∪ (**realtime browse**). Hosts SHOULD run the observe–reason–experiment loop on the challenges: does mine still hold given theirs (and vice versa)?
+Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claims actually overlap), `weak` (shared mention name with little claim content — the join is a candidate, not a verdict), `none` (one-sided). Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
+
+Hosts SHOULD re-run overlap after reject/revise, then diff with `--against previous.json` (reconstructed set vs old). Stop at a fixed point with no remaining `tension`.
 
 Cross-surface edges use lexical/stem overlap and shared mention names. Internal consistency is damped. If `require_cross` (default) and there are no cross-edges, the packet is empty — no filling from dense hubs on one side.
 

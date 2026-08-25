@@ -9,10 +9,15 @@ import pytest
 
 from coherence_cache import paths
 from coherence_cache.atoms import make_atom
-from coherence_cache.check import check_text, format_overlap_check
+from coherence_cache.check import (
+    check_text,
+    format_overlap_check,
+    overlap_unresolved_count,
+)
 from coherence_cache.cli import main
 from coherence_cache.intersection import (
     claims_tension,
+    compare_overlap,
     cross_affinity,
     intersection_packet,
 )
@@ -113,18 +118,25 @@ def test_possible_vs_impossible_is_tension():
     assert "TENSION" in printed
 
 
-def test_challenge_prefers_contradictor_over_paraphrase():
+def test_all_contradictors_are_emitted():
     mine = {"atoms": ["JEPA predicts in latent space rather than tokens."]}
     theirs = {
         "atoms": [
             "JEPA predicts in latent space rather than pixels.",
             "JEPA does not predict in latent space at all.",
+            "JEPA never predicts in latent space.",
         ]
     }
     doc = intersection_packet(mine, theirs)
-    mine_ch = next(c for c in doc["challenges"] if c["source"] == "mine")
-    assert mine_ch.get("tension")
-    assert "does not" in (mine_ch.get("other") or "")
+    mine_ten = [
+        c
+        for c in doc["challenges"]
+        if c["source"] == "mine" and (c.get("tension") or c.get("kind") == "tension")
+    ]
+    others = [c.get("other") or "" for c in mine_ten]
+    assert any("does not" in o for o in others)
+    assert any("never" in o for o in others)
+    assert overlap_unresolved_count(doc) >= 2
 
 
 def test_mention_join_survives_into_challenges():
@@ -149,6 +161,7 @@ def test_mention_join_survives_into_challenges():
     paired = [c for c in doc["challenges"] if c.get("other")]
     assert paired
     assert paired[0]["affinity"] >= 0.18
+    assert paired[0].get("kind") == "weak"
 
 
 def test_stopwords_do_not_fabricate_overlap():
@@ -224,6 +237,38 @@ def test_check_packet_on_atoms_json_uses_store_check(tmp_path, capsys):
     assert "missing mentions" in capsys.readouterr().out
 
 
+def test_self_intersect_challenges_other_atoms_not_clone():
+    store = {
+        "atoms": [
+            "JEPA predicts in latent space rather than tokens.",
+            "JEPA does not predict in latent space at all.",
+            "Packets are the share unit, not transcripts.",
+        ]
+    }
+    doc = intersection_packet(store, store, max_size=6)
+    mine_pred = [
+        c
+        for c in doc["challenges"]
+        if c["source"] == "mine" and "predicts in latent" in (c.get("text") or "")
+    ]
+    others = [c.get("other") or "" for c in mine_pred]
+    assert any("does not" in o for o in others)
+    assert not any(o.strip() == mine_pred[0]["text"].strip() for o in others if o)
+
+
+def test_reconstruct_compare_against_previous():
+    a = "JEPA predicts in latent space rather than tokens."
+    b = "JEPA does not predict in latent space at all."
+    old = intersection_packet({"atoms": [a, b]}, {"atoms": [a, b]}, max_size=4)
+    new = intersection_packet({"atoms": [a]}, {"atoms": [a]}, max_size=4)
+    cmp = compare_overlap(old, new)
+    assert not cmp["fixed_point"]
+    assert any("does not" in t for t in cmp["dropped"])
+    assert cmp["tension_after"] < cmp["tension_before"]
+    same = compare_overlap(new, new)
+    assert same["fixed_point"]
+
+
 def test_intersect_topic_with_itself(tmp_path, capsys):
     root = tmp_path / ".coherence"
     _run(
@@ -245,3 +290,18 @@ def test_intersect_topic_with_itself(tmp_path, capsys):
     assert doc["atoms"]
     sources = {p["source"] for p in doc["provenance"]}
     assert sources == {"mine", "theirs"}
+
+    # reconstruct and compare: same packet is a fixed point
+    capsys.readouterr()
+    _run(
+        root,
+        "intersect",
+        "self-surface",
+        "self-surface",
+        "--out",
+        str(tmp_path / "self2.json"),
+        "--against",
+        str(outp),
+    )
+    against_out = capsys.readouterr().out.lower()
+    assert "matches previous" in against_out

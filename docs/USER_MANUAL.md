@@ -37,7 +37,7 @@ coherence pack --title "your theme" --constraint fact \
   --mention "A Person:person" --at "t=3033"
 ```
 
-The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, then `coherence check --packet`): each challenge asks whether an atom still holds given the other surface. Atom JSON shape is in [SPEC.md](../SPEC.md).
+The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, including a topic with itself): check every challenge, reconstruct, compare with `--against` the previous packet. `TENSION` is a check FAIL (incompatible claims are not done). `WEAK JOIN` is a shared name without shared claim content — reason whether the mention is garbage. Atom JSON shape is in [SPEC.md](../SPEC.md).
 
 **Handoff.** `pack` already wrote the packet.
 
@@ -52,6 +52,8 @@ coherence import ./their-atoms.json --title "Lex public" --use
 coherence intersect my-ai-interests lex-public --query consciousness --out /tmp/overlap.json
 coherence union my-ai-interests lex-public --out /tmp/union.json
 coherence check --packet /tmp/overlap.json
+# after reject/revise:
+coherence intersect my-ai-interests lex-public --out /tmp/overlap2.json --against /tmp/overlap.json
 ```
 
 **Optional (Apple Silicon).** `coherence mint` / `critique` / `eval` after `./install.sh --mlx`. Not required.

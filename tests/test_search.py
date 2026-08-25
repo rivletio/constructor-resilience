@@ -234,7 +234,8 @@ def test_overlap_challenges_pair_cross_surface():
     assert doc["challenges"]
     paired = [c for c in doc["challenges"] if c.get("other")]
     assert paired
-    assert all("still hold" in (c.get("prompt") or "") for c in paired)
+    assert all(c.get("kind") in {"support", "weak", "tension"} for c in paired)
+    assert all(c.get("prompt") for c in paired)
     assert all(c.get("affinity", 0) >= 0.18 for c in paired)
 
 

@@ -107,6 +107,19 @@ def overlap_fail_count(doc: dict) -> int:
     return n
 
 
+def overlap_tension_count(doc: dict) -> int:
+    return sum(
+        1
+        for c in doc.get("challenges") or []
+        if c.get("tension") or c.get("kind") == "tension"
+    )
+
+
+def overlap_unresolved_count(doc: dict) -> int:
+    """Text FAILs plus polarity conflicts the loop must resolve."""
+    return overlap_fail_count(doc) + overlap_tension_count(doc)
+
+
 def format_overlap_check(doc: dict) -> str:
     """Observe/reason/experiment for intersect or union packets."""
     atoms = doc.get("atoms") or []
@@ -136,14 +149,34 @@ def format_overlap_check(doc: dict) -> str:
             if other:
                 osrc = ch.get("other_source", "?")
                 aff = ch.get("affinity", 0)
-                tag = " TENSION" if ch.get("tension") else ""
+                kind = ch.get("kind") or ("tension" if ch.get("tension") else "")
+                tag = ""
+                if kind == "tension" or ch.get("tension"):
+                    tag = " TENSION"
+                elif kind == "weak":
+                    tag = " WEAK JOIN"
                 lines.append(f"      vs ({osrc}) {other}  affinity={aff}{tag}")
             lines.append(f"      {prompt}")
+    n_ten = overlap_tension_count(doc)
+    n_weak = sum(1 for c in challenges if c.get("kind") == "weak")
     if failed_idx:
         idx = failed_idx[0]
         lines.append(
             f"observe: FAIL [{idx}]; "
             "experiment: reject the originating atom then re-run intersect/union"
+        )
+    elif n_ten:
+        lines.append(
+            f"observe: TENSION x{n_ten}; "
+            "reason: which claim is false given the other?; "
+            "experiment: reject the falsified atom (`use` its topic), "
+            "re-run overlap, compare with --against"
+        )
+    elif n_weak:
+        lines.append(
+            f"observe: WEAK JOIN x{n_weak}; "
+            "reason: do the claims actually share a subject, or is the mention garbage?; "
+            "experiment: reject the unearned join or the atom, then re-run"
         )
     elif challenges:
         lines.append(
@@ -153,4 +186,30 @@ def format_overlap_check(doc: dict) -> str:
         )
     elif n == 0:
         lines.append("observe: empty overlap; nothing to challenge")
+    return "\n".join(lines)
+
+
+def format_overlap_compare(cmp: dict) -> str:
+    """Observe a reconstructed overlap against the previous packet."""
+    lines = [
+        "compare  "
+        f"kept={len(cmp.get('kept') or [])} "
+        f"dropped={len(cmp.get('dropped') or [])} "
+        f"added={len(cmp.get('added') or [])}  "
+        f"tension {cmp.get('tension_before', 0)}→{cmp.get('tension_after', 0)}"
+    ]
+    for t in cmp.get("dropped") or []:
+        lines.append(f"  - {t}")
+    for t in cmp.get("added") or []:
+        lines.append(f"  + {t}")
+    if cmp.get("fixed_point"):
+        lines.append(
+            "observe: reconstructed set matches previous; "
+            "stop if check has no TENSION"
+        )
+    else:
+        lines.append(
+            "observe: reconstructed set differs; "
+            "reason whether the drop/add is the right experiment, then continue"
+        )
     return "\n".join(lines)

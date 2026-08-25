@@ -1,6 +1,6 @@
 """Constructor resilience — durable claims, packets, and share files."""
 
-from .intersection import intersection_packet, overlap_challenges
+from .intersection import compare_overlap, intersection_packet, overlap_challenges
 from .search import (
     SAMPLE_METHODS,
     build_qubo,
@@ -18,6 +18,7 @@ __all__ = [
     "energy",
     "find_resilient_constructors",
     "greedy_resilient",
+    "compare_overlap",
     "intersection_packet",
     "overlap_challenges",
     "metropolis",

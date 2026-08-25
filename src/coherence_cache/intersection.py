@@ -148,21 +148,26 @@ def claims_tension(a, b) -> bool:
     return len(inter) >= 3 or jacc >= 0.4
 
 
-def cross_affinity(a, b) -> float:
-    """Lexical Jaccard, stem Jaccard, and shared mention names."""
+def content_affinity(a, b) -> float:
+    """Claim-text overlap only (no mention floor)."""
     ta, tb = _content_tokens(a), _content_tokens(b)
     lex = (len(ta & tb) / len(ta | tb)) if ta and tb else 0.0
     sa, sb = _stem_tokens(a), _stem_tokens(b)
     stem = (len(sa & sb) / len(sa | sb)) if sa and sb else 0.0
-    ma, mb = _mention_names(a), _mention_names(b)
+    rare = {t for t in (ta & tb) if len(t) >= 8}
+    rare_boost = 0.22 if rare else 0.0
+    return max(lex, stem, rare_boost)
+
+
+def cross_affinity(a, b) -> float:
+    """Lexical/stem overlap and shared mention names."""
     mention = 0.0
+    ma, mb = _mention_names(a), _mention_names(b)
     if ma and mb:
         mention = len(ma & mb) / len(ma | mb)
         if ma & mb:
             mention = max(mention, 0.62)
-    rare = {t for t in (ta & tb) if len(t) >= 8}
-    rare_boost = 0.22 if rare else 0.0
-    return max(lex, stem, mention, rare_boost)
+    return max(content_affinity(a, b), mention)
 
 
 def align_cross_atoms(
@@ -209,22 +214,64 @@ def _active_view(store: dict) -> Tuple[list, Dict[Pair, float], List[int]]:
     return [atoms[i] for i in keep], cons, keep
 
 
+_PROMPTS = {
+    "tension": "These claims conflict — does this atom still hold?",
+    "support": "Does this atom still hold given the other side?",
+    "weak": (
+        "Join is a shared name with little claim overlap — "
+        "are these claims actually compatible, or is the mention garbage?"
+    ),
+    "none": (
+        "No counterpart on the other surface — "
+        "is this still true without them?"
+    ),
+}
+
+
+def _challenge_rec(
+    *,
+    src,
+    store_index,
+    text,
+    other_src,
+    other=None,
+    other_store_index=None,
+    affinity=0.0,
+    kind="none",
+) -> dict:
+    return {
+        "source": src,
+        "store_index": store_index,
+        "text": text,
+        "other_source": other_src,
+        "other": other,
+        "other_store_index": other_store_index,
+        "affinity": round(float(affinity), 3),
+        "kind": kind,
+        "tension": kind == "tension",
+        "prompt": _PROMPTS[kind],
+    }
+
+
 def overlap_challenges(
     provenance: Sequence[dict],
     my_store: dict,
     their_store: dict,
     *,
     min_sim: float = 0.18,
+    max_support: int = 4,
 ) -> List[dict]:
-    """One belief-challenge per selected atom against the other full surface.
+    """Belief-challenges for each selected atom against the other full surface.
 
-    Prefers a polarity conflict over a paraphrase so the loop actually
-    challenges whether the atom still holds.
+    Every polarity conflict is emitted (none are dropped). Support / weak
+    joins are capped. The clone of an atom at the same store index is
+    skipped so a topic can audit itself.
     """
     out: List[dict] = []
     for p in provenance:
         text = as_text(p.get("text"))
         src = p.get("source")
+        store_index = p.get("store_index")
         if src == "mine":
             others, other_src, self_store = (
                 list(their_store.get("atoms") or []),
@@ -239,50 +286,78 @@ def overlap_challenges(
             )
         else:
             continue
-        self_atom = _atom_at(self_store, p.get("store_index")) or text
-        best_support: Optional[Tuple[float, int, str]] = None
-        best_tension: Optional[Tuple[float, int, str]] = None
+        self_atom = _atom_at(self_store, store_index) or text
+        tensions: List[dict] = []
+        rest: List[dict] = []
         for j, o in enumerate(others):
             if not is_active(o) or not as_text(o).strip():
+                continue
+            other_text = as_text(o)
+            if other_text.strip() == text.strip() and j == store_index:
                 continue
             s = cross_affinity(self_atom, o)
             if s < min_sim:
                 continue
-            hit = (s, j, as_text(o))
             if claims_tension(self_atom, o):
-                if best_tension is None or s > best_tension[0]:
-                    best_tension = hit
-            elif best_support is None or s > best_support[0]:
-                best_support = hit
-        rec = {
-            "source": src,
-            "store_index": p.get("store_index"),
-            "text": text,
-            "other_source": other_src,
-        }
-        chosen = best_tension or best_support
-        if chosen is not None:
-            s, j, other_text = chosen
-            rec["other"] = other_text
-            rec["other_store_index"] = j
-            rec["affinity"] = round(float(s), 3)
-            rec["tension"] = best_tension is not None
-            rec["prompt"] = (
-                "These claims conflict — does this atom still hold?"
-                if rec["tension"]
-                else "Does this atom still hold given the other side?"
+                kind = "tension"
+            elif content_affinity(self_atom, o) >= min_sim:
+                kind = "support"
+            else:
+                kind = "weak"
+            rec = _challenge_rec(
+                src=src,
+                store_index=store_index,
+                text=text,
+                other_src=other_src,
+                other=other_text,
+                other_store_index=j,
+                affinity=s,
+                kind=kind,
             )
+            if kind == "tension":
+                tensions.append(rec)
+            else:
+                rest.append(rec)
+        tensions.sort(key=lambda r: -r["affinity"])
+        rest.sort(key=lambda r: -r["affinity"])
+        hits = tensions + rest[: max(0, max_support)]
+        if hits:
+            out.extend(hits)
         else:
-            rec["other"] = None
-            rec["other_store_index"] = None
-            rec["affinity"] = 0.0
-            rec["tension"] = False
-            rec["prompt"] = (
-                "No counterpart on the other surface — "
-                "is this still true without them?"
+            out.append(
+                _challenge_rec(
+                    src=src,
+                    store_index=store_index,
+                    text=text,
+                    other_src=other_src,
+                    kind="none",
+                )
             )
-        out.append(rec)
     return out
+
+
+def compare_overlap(old: dict, new: dict) -> dict:
+    """Diff two overlap packets after a reconstruct step."""
+    def _texts(doc: dict) -> list[str]:
+        return [as_text(a) for a in doc.get("atoms") or []]
+
+    before, after = _texts(old), _texts(new)
+    old_set, new_set = set(before), set(after)
+    n_ten = lambda d: sum(
+        1
+        for c in d.get("challenges") or []
+        if c.get("tension") or c.get("kind") == "tension"
+    )
+    return {
+        "kept": [t for t in after if t in old_set],
+        "dropped": [t for t in before if t not in new_set],
+        "added": [t for t in after if t not in old_set],
+        "fixed_point": before == after,
+        "tension_before": n_ten(old),
+        "tension_after": n_ten(new),
+        "size_before": len(before),
+        "size_after": len(after),
+    }
 
 
 def build_intersection_pool(
