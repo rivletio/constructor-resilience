@@ -31,13 +31,13 @@ Read the packet first. If CACHE MISS, pack (next). Only chase what is not alread
 
 ```bash
 coherence pack --title "your theme" --constraint fact \
-  --atom "Durable claim." \
+  --atom "<SENTENCE FROM THIS SESSION>" \
   --mention "The Concept:concept" --at "src/mod.py:12" \
   --atom "Second durable claim." \
   --mention "A Person:person" --at "t=3033"
 ```
 
-The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, including a topic with itself): check every challenge, reconstruct, compare with `--against` the previous packet. `TENSION` is a check FAIL (incompatible claims are not done). Packet, share, and overlap keep **mentions on each claim**, so `It predicts…` + `MENTION: JEPA` stays bound after handoff. Import an ∩ file and the joins come with it. `AT` after `CLAIM` is where the sentence occurred; `AT` after `MENTION` is where that name occurred. A mention is **garbage** when `grounding < 0.5` and it does not fill an anaphor on that atom. A shared attested name is a **join** (affinity 0.62), not a paraphrase — two facts about the same paper both stay in the overlap packet. Mention-only counterparts collapse to one `JOIN` challenge per atom (not a cartesian of “does this still hold?”). Check: `not attested` → put the name/`ALIAS` in the sentence or drop the join. Atom JSON shape is in [SPEC.md](../SPEC.md).
+The packing agent hangs names on the claim (`--mention Name:kind` or a `TITLE`/`CLAIM`/`MENTION`/`AT` draft: `coherence pack --draft pack.txt`). After pack, loop: **observe** (`coherence check`), **reason**, **experiment** (`reject` + one replacement) until every atom PASSes and still looks true. The same loop runs on overlap (`coherence intersect` / `union`, including a topic with itself): check every challenge, reconstruct, compare with `--against` the previous packet. `TENSION` is a check FAIL (incompatible claims are not done). Packet, share, and overlap keep **mentions on each claim**, so `It predicts…` + `MENTION: <NAME>` stays bound after handoff. Import an ∩ file and the joins come with it. `AT` after `CLAIM` is where the sentence occurred; `AT` after `MENTION` is where that name occurred. A mention is **garbage** when `grounding < 0.5` and it does not fill an anaphor on that atom. A shared attested name is a **join** (affinity 0.62), not a paraphrase — two facts about the same paper both stay in the overlap packet. Mention-only counterparts collapse to one `JOIN` challenge per atom (not a cartesian of “does this still hold?”). Check: `not attested` → put the name/`ALIAS` in the sentence or drop the join. Atom JSON shape is in [SPEC.md](../SPEC.md).
 
 **Handoff.** `pack` already wrote the packet.
 

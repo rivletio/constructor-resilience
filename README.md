@@ -34,11 +34,9 @@ Store: `$COHERENCE_ROOT` or `$PWD/.coherence`.
 ## Quick start
 
 ```bash
-coherence pack --title "My AI interests" --constraint fact \
-  --atom "JEPA predicts in latent space rather than tokens." \
-  --mention "JEPA:concept" \
-  --atom "Packets are the share unit, not transcripts." \
-  --mention "packet:concept"
+coherence pack --title "your theme" --constraint fact \
+  --atom "<SENTENCE FROM THIS SESSION>" \
+  --mention "<NAME:kind>"
 coherence share --to alice --audience circle
 ```
 
@@ -54,7 +52,7 @@ coherence mint --file ./notes.md --theme "world models" --ensure-model --auto-sc
 coherence critique --source-file ./notes.md --apply
 coherence review --serve --browser   # http://127.0.0.1:8765; omit --browser to avoid opening Chrome
 coherence reject 3 --reason "claimed impossibility does not hold"
-coherence eval --query "What is JEPA?" --ensure-model
+coherence eval --query "a question this packet should answer" --ensure-model
 ```
 
 ### Overlap with someone else’s surface

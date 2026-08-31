@@ -45,7 +45,7 @@ def traveling_atom(atom: Any) -> dict:
     """Claim as it must travel in packet/share: text plus joins.
 
     Provenance stays on the store. Mentions and refs stay on the claim
-    so anaphor (`It predicts…` + JEPA) remains bound after handoff.
+    so anaphor (`It predicts…` + the hung mention) remains bound after handoff.
     Pending/edited review status travels so lookup can mark in-question.
     """
     rec: dict[str, Any] = {"text": atom_text(atom)}

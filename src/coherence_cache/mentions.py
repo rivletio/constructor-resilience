@@ -40,10 +40,10 @@ VALID_MENTION_KIND = frozenset(
 # A mention is garbage when it is not attested in the claim.
 # grounding = max(compact_hit, token_cover, initialism_hit) in [0, 1]
 #   compact_hit: 1 if compact(name) (len≥3) is a substring of compact(text)
-#                (hyphens/spaces dropped: "V-JEPA" → "vjepa" contains "jepa")
+#                (hyphens/spaces dropped: compact name is a substring of compact text)
 #   token_cover: fraction of name tokens (len≥2) that hit the text
 #   initialism_hit: 1 if compact(name) equals initials of a title-case phrase
-#                in the claim ("Joint Embedding Predictive Architecture" → JEPA)
+#                in the claim
 # Aliases are scored the same way as the name.
 # Anaphora ("It predicts…") is not attestation — the claim is not stand-alone.
 # A locator is not attestation — it pins an artifact, not this sentence.
@@ -192,7 +192,7 @@ def mention_grounding(
 
 
 def _phrase_initialisms(text: str) -> set[str]:
-    """Initials of title-case runs in ``text`` (JEPA ← Joint Embedding …)."""
+    """Initials of title-case runs in ``text``."""
     out: set[str] = set()
     for m in re.finditer(
         r"\b[A-Z][a-z0-9]*(?:\s+[A-Z][a-z0-9]*)+\b", text or ""
@@ -363,7 +363,7 @@ def _fill_mention_locator(rec: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_at_flag(raw: str) -> dict[str, Any]:
-    """Locator: ``file.py:42``, ``file.py#L42-L48``, ``t=3033``, ``p.1 ¶2``, or a URL."""
+    """Locator: ``path:LINE``, ``path#L42-L48``, ``t=SECONDS``, ``p.N ¶M``, or a URL."""
     text = (raw or "").strip().strip("'\"")
     if not text:
         return {}
@@ -421,7 +421,7 @@ def _file_loc(path: str, line: int | None, end_line: int | None) -> dict[str, An
 
 
 def parse_mention_flag(raw: str) -> dict | None:
-    """``Name``, ``Name:kind``, or ``Name:kind @ file.py:42``."""
+    """``Name``, ``Name:kind``, or ``Name:kind @ path:LINE``."""
     text = (raw or "").strip().strip("'\"")
     if not text:
         return None

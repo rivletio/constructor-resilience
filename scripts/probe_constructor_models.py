@@ -20,21 +20,18 @@ from coherence_cache.mint import mint_from_text_retry
 from coherence_cache.mlx_backend import ensure_model
 
 FIXTURE = """
-Ikonic OS law: LLM APIs never run in the guest VM. Inference uses host native
-Metal or CUDA, then approved mesh peers with capacity, then user-gated cloud.
-GLiNER2 large-v1 (340 million parameters) is the host NER default; heuristic NER
-is tests only and must not silently replace GLiNER2.
-The constructor-resilience skill packs durable claims (atoms) into a small
-resume packet. Pack does not require a mint model — the agent extracts names.
-Optional MLX mint defaults to Qwen3-8B-4bit on Apple Silicon.
-FREE is deterministic catalog and teach; it is not an LLM fast path.
-A 27B local generate starved WindowServer (47 GB GPU) and blinked ordinary webpages.
+Constructor-resilience packs durable claims (atoms) into a small resume packet.
+The share unit is the packet, not the transcript. Mentions are joins on a claim,
+not a second graph. Pack does not require a mint model — the packing agent
+extracts names. Optional MLX mint defaults to Qwen3-8B-4bit on Apple Silicon.
+A mention is garbage when it is not attested in the claim. Overlap of two
+interest surfaces is intersection or union; a shared name is a join, not a paraphrase.
 """
 
 QUERIES = [
-    "Where do LLM APIs run relative to the guest VM?",
-    "What is the default host NER family?",
-    "Does constructor pack require a mint model?",
+    "What is the share unit?",
+    "Does pack require a mint model?",
+    "When is a mention garbage?",
 ]
 
 DEFAULT_MODELS = [
@@ -50,7 +47,7 @@ def probe_one(model: str) -> dict:
     ensure_model(model)
     load_s = round(time.perf_counter() - t0, 2)
     t1 = time.perf_counter()
-    mint = mint_from_text_retry(FIXTURE, model=model, theme="ikonic-constructor")
+    mint = mint_from_text_retry(FIXTURE, model=model, theme="constructor-resilience")
     mint_s = round(time.perf_counter() - t1, 2)
     texts = [atom_text(a) for a in mint.get("atoms") or []]
     evals = []

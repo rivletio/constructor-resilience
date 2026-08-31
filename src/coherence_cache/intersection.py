@@ -114,7 +114,7 @@ def _parse_consistency(store: dict) -> Dict[Pair, float]:
 
 
 def _canonical_join_names(names: Sequence[str]) -> list[str]:
-    """Dedupe 'the Transformer' / 'Transformer' for JOIN display."""
+    """Dedupe 'the Name' / 'Name' for JOIN display."""
     out: List[str] = []
     seen: set[str] = set()
     for n in names:

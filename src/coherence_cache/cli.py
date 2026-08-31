@@ -133,7 +133,7 @@ def cmd_status(_args):
     else:
         print("Active topic: (none)")
         if not meta.get("topics"):
-            print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')
+            print('  Pack claims:  coherence pack --title "Theme" --atom "<SENTENCE>"')
         else:
             print("  Zoom in:      coherence use <topic-id>")
 
@@ -245,7 +245,7 @@ def refresh_topic_counts(topic_id: str):
 def _no_topic_exit() -> None:
     raise SystemExit(
         "No active topic.\n"
-        '  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."\n'
+        '  Pack claims:  coherence pack --title "Theme" --atom "<SENTENCE>"\n'
         "  Or zoom in:   coherence use <topic-id>"
     )
 
@@ -429,7 +429,7 @@ def _items_from_args(args) -> list:
             raise SystemExit(f"ingest JSON: {e}") from e
     if not items:
         raise SystemExit(
-            'Need claims:  --atom "Durable claim."  (repeatable)\n'
+            'Need claims:  --atom "<SENTENCE>"  (repeatable)\n'
             "           or --json claims.json  or --text JSON  or --draft FILE"
         )
     constraint = getattr(args, "constraint", None)
@@ -1317,7 +1317,7 @@ def cmd_cache(args):
     q = content_tokens(args.query)
     if not q:
         print("CACHE MISS — no matching topics.")
-        print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')
+        print('  Pack claims:  coherence pack --title "Theme" --atom "<SENTENCE>"')
         return
     ranked = []
     for t in meta.get("topics", []):
@@ -1331,7 +1331,7 @@ def cmd_cache(args):
     ranked.sort(key=lambda r: (r[0], r[1], r[2]["id"]), reverse=True)
     if not ranked:
         print("CACHE MISS — no matching topics.")
-        print('  Pack claims:  coherence pack --title "Theme" --atom "Durable claim."')
+        print('  Pack claims:  coherence pack --title "Theme" --atom "<SENTENCE>"')
         return
 
     mod = resilience_search
@@ -2092,7 +2092,7 @@ def main(argv=None):
         action=ClaimParts,
         dest="claim_parts",
         metavar="LOC",
-        help="Where: after --atom locates the claim; after --mention locates the join (file.py:42, t=3033, URL)",
+        help="Where: after --atom locates the claim; after --mention locates the join (path:line, t=seconds, URL)",
     )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument(
@@ -2145,7 +2145,7 @@ def main(argv=None):
         action=ClaimParts,
         dest="claim_parts",
         metavar="LOC",
-        help="Where: after --atom locates the claim; after --mention locates the join (file.py:42, t=3033, URL)",
+        help="Where: after --atom locates the claim; after --mention locates the join (path:line, t=seconds, URL)",
     )
     p_pack.add_argument("--json", help="Path to claims JSON")
     p_pack.add_argument(
