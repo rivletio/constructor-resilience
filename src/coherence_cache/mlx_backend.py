@@ -40,7 +40,11 @@ def generate(
     temp: float | None = None,
     model: str | None = None,
 ) -> dict:
-    """Generate text; returns {text, model, backend}."""
+    """Generate text; returns {text, model, backend}.
+
+    One backend for every mint model. Pass ``model=`` or ``COHERENCE_MLX_MODEL``.
+    Do not copy this function into a per-model package.
+    """
     mid = model or CFG.mlx_model
     max_tokens = max_tokens if max_tokens is not None else CFG.mlx_max_tokens
     temp = CFG.mint_temp if temp is None else temp

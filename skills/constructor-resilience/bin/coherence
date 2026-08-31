@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Wrapper next to SKILL.md. Same functions as `coherence` — no per-host fork.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SKILL_DIR="$(cd "$HERE/.." && pwd)"
+
+# Layout A: constructor-resilience/skills/constructor-resilience/bin
+CLI_ROOT="$(cd "$SKILL_DIR/../.." && pwd)"
+if [[ -f "$CLI_ROOT/pyproject.toml" ]] && grep -q 'name = "constructor-resilience"' "$CLI_ROOT/pyproject.toml" 2>/dev/null; then
+  if command -v coherence >/dev/null 2>&1; then
+    real="$(command -v coherence)"
+    if [[ "$real" != "$HERE/coherence" ]]; then
+      exec "$real" "$@"
+    fi
+  fi
+  export PYTHONPATH="$CLI_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+  exec python3 -m coherence_cache.cli "$@"
+fi
+
+# Layout B: constructor-resilience-skill/skills/... — bootstrap installer
+PREFIX="${CONSTRUCTOR_RESILIENCE_VENV:-${XDG_DATA_HOME:-$HOME/.local/share}/constructor-resilience/venv}"
+BIN="$PREFIX/bin/coherence"
+USER_BIN="${CONSTRUCTOR_RESILIENCE_BIN:-$HOME/.local/bin}"
+
+bootstrap() {
+  echo "coherence CLI missing; bootstrapping..." >&2
+  local install_sh="" sibling=""
+  if [[ -f "$SKILL_DIR/../../install.sh" ]]; then
+    install_sh="$(cd "$SKILL_DIR/../.." && pwd)/install.sh"
+  fi
+  if [[ -n "$install_sh" ]]; then
+    bash "$install_sh" --user
+    return 0
+  fi
+  mkdir -p "$PREFIX" "$USER_BIN"
+  python3 -m venv "$PREFIX"
+  sibling="$(cd "$SKILL_DIR/../../.." && pwd)/constructor-resilience"
+  if [[ -f "$sibling/pyproject.toml" ]]; then
+    "$PREFIX/bin/pip" install -U pip
+    "$PREFIX/bin/pip" install -e "$sibling"
+  else
+    "$PREFIX/bin/pip" install -U pip
+    "$PREFIX/bin/pip" install "git+https://github.com/rivletio/constructor-resilience.git"
+  fi
+  ln -sfn "$BIN" "$USER_BIN/coherence"
+}
+
+if [[ ! -x "$BIN" ]]; then
+  bootstrap
+fi
+if [[ ! -x "$BIN" ]]; then
+  echo "failed to install coherence CLI" >&2
+  exit 127
+fi
+exec "$BIN" "$@"

@@ -3,6 +3,8 @@
 A **host** is any product that stores topics and/or injects packets.
 The **compression method** is open; **circle policy and UX** belong to the host.
 
+**One library.** `coherence_cache` (CLI `coherence`) is the only implementation of pack, check, lookup, join, share, mint. Hosts (Grok, Claude, Codex, Cursor) and mint models (Qwen, Llama, …) are packages that *call* those functions. They do not copy them. Model id is `COHERENCE_MLX_MODEL` / `--model` on the same `mlx_backend.generate`. The agent skill is one `SKILL.md` next to this repo (`skills/constructor-resilience`); installers symlink it into each host’s skill dir.
+
 ## MUST
 
 1. Resolve store root via `--root`, `COHERENCE_ROOT`, or host default (`$PWD/.coherence`).
@@ -33,7 +35,7 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 | Host | Depth | Notes |
 |------|--------|------|
 | **CLI (`coherence`)** | Full | Reference implementation |
-| **Agent skill (Claude / Grok / Codex / Cursor)** | Medium | Session digest + handoff — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) |
+| **Agent skill (Grok / Claude / Codex / Cursor)** | Medium | One `SKILL.md`; installer only — [`rivletio/constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) |
 | **Obsidian** | Export | Human inspect via `export` |
 | **Editors** | Inject | Packet as rules/context |
 

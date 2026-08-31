@@ -103,8 +103,12 @@ Energy model: [docs/qubo-formulation.md](./docs/qubo-formulation.md). Host contr
 
 ## Hosts
 
-The **CLI** is the reference. The **agent skill** is the usual install:
-[`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill).
+The **CLI** is the functions. One `SKILL.md` sits at
+[`skills/constructor-resilience`](./skills/constructor-resilience/SKILL.md).
+Grok, Claude, Codex, and Cursor get that file by symlink — they do not copy
+pack/check/lookup. Mint models use the same `generate`; set `COHERENCE_MLX_MODEL`.
+
+Installer: [`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill).
 Circle policy belongs to the host; this repo is the method.
 
 ## License
