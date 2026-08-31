@@ -16,6 +16,14 @@ def test_canonical_skill_is_the_protocol():
     assert "GLiNER" not in text
 
 
+def test_repo_root_skill_is_a_symlink_not_a_copy():
+    """Agents open SKILL.md at the repo root. That path must not fork the protocol."""
+    root = ROOT / "SKILL.md"
+    assert root.is_symlink(), "repo-root SKILL.md should symlink to skills/constructor-resilience"
+    assert root.resolve() == CANON.resolve()
+    assert root.read_text(encoding="utf-8") == CANON.read_text(encoding="utf-8")
+
+
 def test_skill_package_does_not_drift_when_present():
     sibling = ROOT.parent / "constructor-resilience-skill" / "skills" / "constructor-resilience" / "SKILL.md"
     if not sibling.exists():
