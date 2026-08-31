@@ -1302,6 +1302,17 @@ def cmd_find(args):
 
 def cmd_cache(args):
     """Fast cache layer: find topics for query, emit greedy resilient packets."""
+    packet = getattr(args, "packet", None)
+    if packet:
+        from .check import format_overlap_lookup
+        from .intersection import overlap_lookup
+
+        path = Path(packet)
+        doc = load_json(path)
+        if not doc:
+            raise SystemExit(f"Missing packet: {path}")
+        print(format_overlap_lookup(overlap_lookup(doc, args.query, max_hits=args.max_size)))
+        return
     meta = load_meta()
     q = content_tokens(args.query)
     if not q:
@@ -1866,7 +1877,7 @@ def cmd_intersect(args):
     prov = doc.get("provenance") or []
     for i, a in enumerate(doc.get("atoms") or []):
         src = prov[i].get("source", "?") if i < len(prov) else "?"
-        print(f"  [{i}] ({src}) {a}")
+        print(f"  [{i}] ({src}) {atom_text(a)}")
     print(format_overlap_check(doc))
     against = getattr(args, "against", None)
     if against:
@@ -1877,6 +1888,66 @@ def cmd_intersect(args):
         from .intersection import compare_overlap
 
         print(format_overlap_compare(compare_overlap(prev, doc)))
+    lookup_q = getattr(args, "lookup", None)
+    if lookup_q:
+        from .check import format_overlap_lookup
+        from .intersection import overlap_lookup, union_dataset
+
+        src = (
+            union_dataset(mine, theirs, min_sim=args.min_sim)
+            if is_union
+            else doc
+        )
+        print()
+        print(format_overlap_lookup(overlap_lookup(src, lookup_q, max_hits=args.max_size)))
+
+
+def cmd_lookup(args):
+    """Fast NL lookup over a union packet or two topics (lexical, no model)."""
+    from .check import format_overlap_lookup
+    from .intersection import intersection_packet, overlap_lookup, union_dataset
+
+    packet = getattr(args, "packet", None)
+    mine_id = getattr(args, "mine", None)
+    theirs_id = getattr(args, "theirs", None)
+    if packet:
+        path = Path(packet)
+        doc = load_json(path)
+        if not doc:
+            raise SystemExit(f"Missing packet: {path}")
+    elif mine_id and theirs_id:
+        meta = load_meta()
+
+        def load_topic(tid: str) -> dict:
+            t = next((x for x in meta.get("topics", []) if x["id"] == tid), None)
+            if not t:
+                raise SystemExit(f"Unknown topic: {tid}")
+            path = get_root() / t["path"] / "atoms.json"
+            store = load_json(path)
+            if not store:
+                raise SystemExit(f"Missing store: {path}")
+            return store
+
+        mine, theirs = load_topic(mine_id), load_topic(theirs_id)
+        if getattr(args, "intersect", False):
+            doc = intersection_packet(
+                mine,
+                theirs,
+                max_size=max(args.max_hits, 8),
+                min_cross_sim=args.min_sim,
+                seed_query=args.query,
+            )
+        else:
+            doc = union_dataset(mine, theirs, min_sim=args.min_sim)
+    else:
+        raise SystemExit("lookup needs --packet FILE or --mine ID --theirs ID")
+
+    result = overlap_lookup(doc, args.query, max_hits=args.max_hits)
+    print(format_overlap_lookup(result))
+    out = getattr(args, "out", None)
+    if out:
+        save_json(Path(out), result)
+        print(f"wrote {out}")
 
 
 def cmd_check(args):
@@ -1898,6 +1969,12 @@ def cmd_check(args):
         doc = load_json(path)
         if not doc:
             raise SystemExit(f"Missing packet: {path}")
+        kind = doc.get("kind")
+        if kind in {"interest_intersection", "interest_union"} or "challenges" in doc:
+            print(format_overlap_check(doc))
+            if overlap_unresolved_count(doc):
+                raise SystemExit(1)
+            return
         atoms = doc.get("atoms") or []
         a0 = atoms[0] if atoms else None
         if isinstance(a0, dict) and any(
@@ -2314,7 +2391,30 @@ def main(argv=None):
     p_cache.add_argument("--max-size", type=int, default=6)
     p_cache.add_argument("--redundancy-scale", type=float, default=2.0)
     p_cache.add_argument("--all", action="store_true", help="Include zero-overlap topics")
+    p_cache.add_argument(
+        "--packet",
+        default=None,
+        help="Lookup inside an overlap/union JSON instead of scanning topics",
+    )
     p_cache.set_defaults(func=cmd_cache)
+
+    p_lu = sub.add_parser(
+        "lookup",
+        help="Fast NL lookup over a union of two topics or an overlap packet",
+    )
+    p_lu.add_argument("query")
+    p_lu.add_argument("--packet", help="Overlap JSON from union/intersect")
+    p_lu.add_argument("--mine", help="My topic id")
+    p_lu.add_argument("--theirs", help="Their topic id")
+    p_lu.add_argument(
+        "--intersect",
+        action="store_true",
+        help="Lookup ∩ (default is full ∪ of both stores)",
+    )
+    p_lu.add_argument("--min-sim", type=float, default=0.18)
+    p_lu.add_argument("--max-hits", type=int, default=6)
+    p_lu.add_argument("--out", default=None, help="Write lookup JSON")
+    p_lu.set_defaults(func=cmd_lookup)
 
     sub.add_parser("meta", help="Show meta-graph topics and links").set_defaults(func=cmd_meta_graph)
     p_packet = sub.add_parser("packet", help="Show or rebuild the resume packet")
@@ -2335,6 +2435,11 @@ def main(argv=None):
             help="Min cross-surface lexical affinity",
         )
         p.add_argument("--query", default=None, help="Optional seed query to reweight browse")
+        p.add_argument(
+            "--lookup",
+            default=None,
+            help="After overlap, fast NL lookup over the union (lexical)",
+        )
         p.add_argument("--redundancy-scale", type=float, default=2.0)
         p.add_argument("--allow-one-sided", action="store_true")
         p.add_argument("--out", default=None, help="Write overlap packet JSON")

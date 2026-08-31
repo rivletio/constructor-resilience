@@ -433,7 +433,7 @@ def test_intersect_union_challenges_and_check_packet(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "intersection" in out
     assert "challenges" in out
-    assert "still hold" in out
+    assert "still hold" in out or "stand alone" in out or "JOIN" in out
     doc = _load(overlap)
     assert doc["kind"] == "interest_intersection"
     assert doc["challenges"]

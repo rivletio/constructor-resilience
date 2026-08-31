@@ -30,6 +30,60 @@
         "reviewed_at": "2026-08-24T00:00:00Z",
         "notes": "Grounded in arXiv:1706.03762 p.1 ¶1 (abstract)"
       }
+    },
+    {
+      "text": "Scaled dot-product attention in the Transformer divides query-key products by the square root of the key dimension so softmax stays out of vanishing-gradient regions.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 4,
+          "paragraph": 3,
+          "excerpt": "To counteract this effect, we scale the dot products by 1/√d_k."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "To counteract this effect, we scale the dot products by 1/√d_k.",
+        "created": "2026-08-24T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-24T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.4 §3.2.1"
+      }
+    },
+    {
+      "text": "Multi-head attention lets the Transformer jointly attend to information from different representation subspaces at different positions.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 4,
+          "paragraph": 5,
+          "excerpt": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions.",
+        "created": "2026-08-24T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-24T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.4 §3.2.2"
+      }
     }
   ],
   "consistency": {}

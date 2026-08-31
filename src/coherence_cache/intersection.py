@@ -13,9 +13,17 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .atoms import is_active
+from .atoms import (
+    REVIEW_EDITED,
+    REVIEW_PENDING,
+    atom_review_status,
+    is_active,
+    query_overlap,
+    traveling_atom,
+)
 from .mentions import (
     MENTION_GROUND_MIN,
+    VALID_CONSTRAINT,
     extract_mentions,
     join_grounding,
     mention_attested_score,
@@ -105,6 +113,21 @@ def _parse_consistency(store: dict) -> Dict[Pair, float]:
     return out
 
 
+def _canonical_join_names(names: Sequence[str]) -> list[str]:
+    """Dedupe 'the Transformer' / 'Transformer' for JOIN display."""
+    out: List[str] = []
+    seen: set[str] = set()
+    for n in names:
+        n = str(n or "").strip().lower()
+        if n.startswith("the "):
+            n = n[4:].strip()
+        if not n or n in seen:
+            continue
+        seen.add(n)
+        out.append(n)
+    return out
+
+
 def _mention_names(atom) -> set[str]:
     names: set[str] = set()
     if isinstance(atom, dict):
@@ -153,15 +176,21 @@ def claims_tension(a, b) -> bool:
     return len(inter) >= 3 or jacc >= 0.4
 
 
-def content_affinity(a, b) -> float:
-    """Claim-text overlap only (no mention floor)."""
+def _text_overlap(a, b) -> float:
+    """Lexical/stem Jaccard only — no rare-token boost, no mention floor."""
     ta, tb = _content_tokens(a), _content_tokens(b)
     lex = (len(ta & tb) / len(ta | tb)) if ta and tb else 0.0
     sa, sb = _stem_tokens(a), _stem_tokens(b)
     stem = (len(sa & sb) / len(sa | sb)) if sa and sb else 0.0
+    return max(lex, stem)
+
+
+def content_affinity(a, b) -> float:
+    """Claim-text overlap only (no mention floor)."""
+    ta, tb = _content_tokens(a), _content_tokens(b)
     rare = {t for t in (ta & tb) if len(t) >= 8}
     rare_boost = 0.22 if rare else 0.0
-    return max(lex, stem, rare_boost)
+    return max(_text_overlap(a, b), rare_boost)
 
 
 def _grounded_mention_names(atom) -> set[str]:
@@ -173,14 +202,21 @@ def _grounded_mention_names(atom) -> set[str]:
     }
 
 
+# Shared grounded names link two surfaces. They are not paraphrases.
+# Must stay below search.redundancy_map high_consistency (0.85):
+#   pool edge = min(0.95, 0.4 + 0.7 * 0.62) = 0.834
+MENTION_JOIN_AFFINITY = 0.62
+
+
 def cross_affinity(a, b) -> float:
-    """Lexical/stem overlap and *grounded* shared mention names."""
-    mention = 0.0
-    ma, mb = _grounded_mention_names(a), _grounded_mention_names(b)
-    if ma and mb:
-        mention = len(ma & mb) / len(ma | mb)
-        if ma & mb:
-            mention = max(mention, 0.62)
+    """Lexical/stem overlap, plus a capped join for grounded shared names.
+
+    A shared attested name is a join of fixed strength (not 1.0).
+    Claim-text overlap can still be 1.0 when the sentences themselves match.
+    """
+    mention = MENTION_JOIN_AFFINITY if (
+        _grounded_mention_names(a) & _grounded_mention_names(b)
+    ) else 0.0
     return max(content_affinity(a, b), mention)
 
 
@@ -231,6 +267,10 @@ def _active_view(store: dict) -> Tuple[list, Dict[Pair, float], List[int]]:
 _PROMPTS = {
     "tension": "These claims conflict — does this atom still hold?",
     "support": "Does this atom still hold given the other side?",
+    "join": (
+        "Shared name, different facts — not a conflict. "
+        "Does this atom still stand alone?"
+    ),
     "garbage": (
         "Shared mention is not attested in both claims "
         f"(grounding < {MENTION_GROUND_MIN}) — drop the unearned join"
@@ -253,8 +293,10 @@ def _challenge_rec(
     affinity=0.0,
     kind="none",
     grounding=0.0,
+    shared=None,
+    n_other=None,
 ) -> dict:
-    return {
+    rec = {
         "source": src,
         "store_index": store_index,
         "text": text,
@@ -267,6 +309,11 @@ def _challenge_rec(
         "tension": kind == "tension",
         "prompt": _PROMPTS[kind],
     }
+    if shared:
+        rec["shared"] = list(shared)
+    if n_other is not None:
+        rec["n_other"] = int(n_other)
+    return rec
 
 
 def overlap_challenges(
@@ -279,9 +326,11 @@ def overlap_challenges(
 ) -> List[dict]:
     """Belief-challenges for each selected atom against the other full surface.
 
-    Every polarity conflict is emitted (none are dropped). Support / weak
-    joins are capped. The clone of an atom at the same store index is
-    skipped so a topic can audit itself.
+    Every polarity conflict is emitted (none are dropped). Content-overlap
+    support is capped. Mention-only counterparts collapse to one ``join``
+    per atom (a shared paper is not a cartesian of belief checks). The
+    clone of an atom at the same store index is skipped so a topic can
+    audit itself.
     """
     out: List[dict] = []
     for p in provenance:
@@ -304,7 +353,9 @@ def overlap_challenges(
             continue
         self_atom = _atom_at(self_store, store_index) or text
         tensions: List[dict] = []
-        rest: List[dict] = []
+        supports: List[dict] = []
+        joins: List[dict] = []
+        garbage: List[dict] = []
         for j, o in enumerate(others):
             if not is_active(o) or not as_text(o).strip():
                 continue
@@ -315,10 +366,14 @@ def overlap_challenges(
             if s < min_sim:
                 continue
             g = join_grounding(self_atom, o)
+            # Rare-token boost (long shared names) is alignment, not support.
+            text_hit = _text_overlap(self_atom, o) >= min_sim
             if claims_tension(self_atom, o):
                 kind = "tension"
-            elif content_affinity(self_atom, o) >= min_sim or g >= MENTION_GROUND_MIN:
+            elif text_hit:
                 kind = "support"
+            elif g >= MENTION_GROUND_MIN:
+                kind = "join"
             else:
                 kind = "garbage"
             rec = _challenge_rec(
@@ -331,18 +386,41 @@ def overlap_challenges(
                 affinity=s,
                 kind=kind,
                 grounding=g,
+                shared=(
+                    _canonical_join_names(
+                        _grounded_mention_names(self_atom)
+                        & _grounded_mention_names(o)
+                    )
+                    if kind == "join"
+                    else None
+                ),
             )
             if kind == "tension":
                 tensions.append(rec)
-            elif kind == "garbage":
-                rest.append(rec)
+            elif kind == "support":
+                supports.append(rec)
+            elif kind == "join":
+                joins.append(rec)
             else:
-                rest.append(rec)
+                garbage.append(rec)
         tensions.sort(key=lambda r: -r["affinity"])
-        rest.sort(
-            key=lambda r: (0 if r["kind"] == "garbage" else 1, -r["affinity"])
-        )
-        hits = tensions + rest[: max(0, max_support)]
+        garbage.sort(key=lambda r: -r["affinity"])
+        supports.sort(key=lambda r: -r["affinity"])
+        join_hit: List[dict] = []
+        if joins:
+            joins.sort(key=lambda r: -r["affinity"])
+            seen: set[str] = set()
+            shared: List[str] = []
+            for r in joins:
+                for n in r.get("shared") or []:
+                    if n not in seen:
+                        seen.add(n)
+                        shared.append(n)
+            top = joins[0]
+            top["shared"] = _canonical_join_names(shared)
+            top["n_other"] = len(joins)
+            join_hit = [top]
+        hits = tensions + garbage + supports[: max(0, max_support)] + join_hit
         if hits:
             out.extend(hits)
         else:
@@ -595,7 +673,207 @@ def intersection_packet(
             if i < len(provenance)
             else {"index": i, "source": "?", "text": pool[i]}
         )
-        selected.append(pool[i])
+        src = p.get("source")
+        store = (
+            my_store
+            if src == "mine"
+            else their_store
+            if src == "theirs"
+            else {}
+        )
+        raw = _atom_at(store, p.get("store_index"))
+        selected.append(traveling_atom(raw if raw is not None else p.get("text") or pool[i]))
         indices.append(int(p.get("index", i)))
         prov_sel.append(p)
     return _doc(selected, eng, indices, prov_sel)
+
+
+def _constraint_of(atom) -> str:
+    if isinstance(atom, dict):
+        c = str(atom.get("constraint") or "").strip().lower()
+        if c in VALID_CONSTRAINT:
+            return c
+    return ""
+
+
+def union_dataset(my_store: dict, their_store: dict, *, min_sim: float = 0.18) -> dict:
+    """Full ∪ of two stores — no greedy cut. Fast-path lookup dataset."""
+    mine_raw, _, mine_orig = _active_view(my_store)
+    theirs_raw, _, theirs_orig = _active_view(their_store)
+    atoms: List[dict] = []
+    provenance: List[dict] = []
+    for i, a in enumerate(mine_raw):
+        atoms.append(traveling_atom(a))
+        provenance.append(
+            {
+                "index": i,
+                "source": "mine",
+                "text": as_text(a),
+                "store_index": mine_orig[i],
+            }
+        )
+    n_mine = len(mine_raw)
+    for j, b in enumerate(theirs_raw):
+        atoms.append(traveling_atom(b))
+        provenance.append(
+            {
+                "index": n_mine + j,
+                "source": "theirs",
+                "text": as_text(b),
+                "store_index": theirs_orig[j],
+            }
+        )
+    return {
+        "version": 1,
+        "kind": "interest_union",
+        "method": "union_dataset",
+        "atoms": atoms,
+        "provenance": provenance,
+        "challenges": overlap_challenges(
+            provenance, my_store, their_store, min_sim=min_sim
+        ),
+        "n_mine": n_mine,
+        "n_theirs": len(theirs_raw),
+        "require_cross": False,
+        "max_size": len(atoms),
+        "atom_count_source": len(atoms),
+    }
+
+
+def polarity_pairs(
+    atoms: Sequence,
+    *,
+    min_sim: float = 0.18,
+    max_pairs: int = 8,
+) -> List[dict]:
+    """Interesting possible × impossible combinations (shared join or tension)."""
+    poss = [(i, a) for i, a in enumerate(atoms) if _constraint_of(a) == "possibility"]
+    imp = [(i, a) for i, a in enumerate(atoms) if _constraint_of(a) == "impossibility"]
+    out: List[dict] = []
+    for i, a in poss:
+        for j, b in imp:
+            s = cross_affinity(a, b)
+            tense = claims_tension(a, b)
+            if s < min_sim and not tense:
+                continue
+            shared = _canonical_join_names(
+                _grounded_mention_names(a) & _grounded_mention_names(b)
+            )
+            out.append(
+                {
+                    "possible_index": i,
+                    "impossible_index": j,
+                    "possible": traveling_atom(a),
+                    "impossible": traveling_atom(b),
+                    "affinity": round(float(s), 3),
+                    "tension": bool(tense),
+                    "shared": shared,
+                }
+            )
+    out.sort(key=lambda r: (-int(r["tension"]), -r["affinity"]))
+    return out[: max(0, max_pairs)]
+
+
+def question_atoms(
+    atoms: Sequence,
+    challenges: Sequence[dict] | None = None,
+) -> List[dict]:
+    """Atoms that still need evaluation: pending, tension, possibility, impossibility."""
+    tension_texts = {
+        as_text(c.get("text"))
+        for c in (challenges or [])
+        if c.get("tension") or c.get("kind") == "tension"
+    }
+    out: List[dict] = []
+    for i, a in enumerate(atoms):
+        why: List[str] = []
+        st = atom_review_status(a)
+        if st in {REVIEW_PENDING, REVIEW_EDITED}:
+            why.append("pending" if st == REVIEW_PENDING else "edited")
+        if as_text(a) in tension_texts:
+            why.append("tension")
+        c = _constraint_of(a)
+        if c == "possibility":
+            why.append("possibility")
+        elif c == "impossibility":
+            why.append("impossibility")
+        if not why:
+            continue
+        out.append(
+            {
+                "index": i,
+                "atom": traveling_atom(a),
+                "why": why,
+                "constraint": c or None,
+            }
+        )
+    return out
+
+
+def overlap_lookup(
+    doc: dict,
+    query: str,
+    *,
+    max_hits: int = 6,
+    min_sim: float = 0.18,
+) -> dict:
+    """Fast NL lookup over a union/overlap packet. Lexical only — no model.
+
+    Hits are query-ranked. Polarity lists possible/impossible combinations.
+    Question lists atoms still to evaluate (pending, tension, constructors).
+    """
+    atoms = list(doc.get("atoms") or [])
+    q = (query or "").strip()
+    scored: List[tuple] = []
+    for i, a in enumerate(atoms):
+        s = query_overlap(q, a) if q else 0.0
+        scored.append((s, i, a))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    hits_raw = [t for t in scored if t[0] > 0][: max(0, max_hits)]
+    hits = [
+        {
+            "index": i,
+            "score": round(float(s), 3),
+            "atom": traveling_atom(a),
+            "constraint": _constraint_of(a) or None,
+        }
+        for s, i, a in hits_raw
+    ]
+    polar = polarity_pairs(atoms, min_sim=min_sim)
+    if q and polar and hits:
+        hit_idx = {h["index"] for h in hits}
+        hit_names: set[str] = set()
+        for h in hits:
+            hit_names |= _grounded_mention_names(h["atom"])
+        related = [
+            p
+            for p in polar
+            if p["possible_index"] in hit_idx
+            or p["impossible_index"] in hit_idx
+            or (hit_names & set(p.get("shared") or []))
+        ]
+        if related:
+            polar = related
+    quest = question_atoms(atoms, doc.get("challenges") or [])
+    if q and quest and hits:
+        hit_idx = {h["index"] for h in hits}
+        related_q = [r for r in quest if r["index"] in hit_idx]
+        # keep constructor/pending even if they missed the query tokens
+        extra = [
+            r
+            for r in quest
+            if r["index"] not in hit_idx
+            and any(w in r["why"] for w in ("pending", "edited", "tension"))
+        ]
+        quest = related_q + extra
+    return {
+        "version": 1,
+        "kind": "overlap_lookup",
+        "query": q,
+        "source_kind": doc.get("kind"),
+        "hits": hits,
+        "polarity": polar,
+        "question": quest,
+        "n_union": len(atoms),
+        "n_hits": len(hits),
+    }

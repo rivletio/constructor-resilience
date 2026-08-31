@@ -15,8 +15,9 @@ The **compression method** is open; **circle policy and UX** belong to the host.
 
 1. Support **interest surfaces**: topics tagged with what the user is willing to show.
 2. Support **`intersect` / `union`**: recompute overlap when the user changes browse dials or ∩ vs ∪. Run challenges: does an atom still hold given the other surface?
-3. Project packets to classical web (markdown, RSS item, URL cite) when useful.
-4. Separate **published** (public figures, open projects) from **private** stores.
+3. Support **`lookup`** over the ∪: natural-language query → hits, possible × impossible pairs, atoms still in question. Lexical; no extra model.
+4. Project packets to classical web (markdown, RSS item, URL cite) when useful.
+5. Separate **published** (public figures, open projects) from **private** stores.
 
 ## MAY
 

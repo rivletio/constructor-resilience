@@ -171,13 +171,17 @@ def format_overlap_check(doc: dict) -> str:
             if other:
                 osrc = ch.get("other_source", "?")
                 aff = ch.get("affinity", 0)
-                kind = ch.get("kind") or ("tension" if ch.get("tension") else "")
+                ckind = ch.get("kind") or ("tension" if ch.get("tension") else "")
                 tag = ""
-                if kind == "tension" or ch.get("tension"):
+                if ckind == "tension" or ch.get("tension"):
                     tag = " TENSION"
-                elif kind == "garbage":
+                elif ckind == "garbage":
                     g = ch.get("grounding", 0)
                     tag = f" GARBAGE JOIN grounding={g}"
+                elif ckind == "join":
+                    names = ", ".join(ch.get("shared") or []) or "name"
+                    n_o = ch.get("n_other") or 1
+                    tag = f" JOIN {names} ×{n_o}"
                 lines.append(f"      vs ({osrc}) {other}  affinity={aff}{tag}")
             lines.append(f"      {prompt}")
     n_ten = overlap_tension_count(doc)
@@ -201,14 +205,84 @@ def format_overlap_check(doc: dict) -> str:
             "reason: mention grounding < 0.5 — name is not in the claim; "
             "experiment: drop the unearned mention or reject the atom, then re-run"
         )
-    elif challenges:
+    elif challenges and all(
+        c.get("kind") in {"join", "none"} for c in challenges
+    ):
         lines.append(
-            "observe: challenge each pair; "
-            "reason: does this still hold given the other side?; "
-            "experiment: reject the falsified atom (`use` its topic) then re-run"
+            "observe: name joins only; facts are distinct — not a belief conflict"
         )
+    elif challenges:
+        n_join = sum(1 for c in challenges if c.get("kind") == "join")
+        n_sup = sum(1 for c in challenges if c.get("kind") == "support")
+        if n_join and n_sup:
+            lines.append(
+                f"observe: support x{n_sup}, name joins x{n_join}; "
+                "reason: does a support pair still hold? joins are distinct facts; "
+                "experiment: reject the falsified atom (`use` its topic) then re-run"
+            )
+        else:
+            lines.append(
+                "observe: challenge each pair; "
+                "reason: does this still hold given the other side?; "
+                "experiment: reject the falsified atom (`use` its topic) then re-run"
+            )
     elif n == 0:
         lines.append("observe: empty overlap; nothing to challenge")
+    return "\n".join(lines)
+
+
+def format_overlap_lookup(doc: dict) -> str:
+    """Human board: NL hits, possible/impossible pairs, atoms in question."""
+    q = doc.get("query") or ""
+    n_u = doc.get("n_union") or 0
+    hits = doc.get("hits") or []
+    lines = [
+        f"LOOKUP  {q!r}  hits={len(hits)}/{n_u}  "
+        f"polarity={len(doc.get('polarity') or [])}  "
+        f"question={len(doc.get('question') or [])}"
+    ]
+    if not hits and q:
+        lines.append("hits  (none — try a name or a content word from the union)")
+    elif hits:
+        lines.append("hits")
+        for h in hits:
+            i = h.get("index")
+            cons = h.get("constraint") or "—"
+            text = atom_text(h.get("atom"))
+            lines.append(f"  [{i}] {h.get('score', 0):.2f}  {cons:13} {text}")
+    polar = doc.get("polarity") or []
+    if polar:
+        lines.append("polarity")
+        for k, p in enumerate(polar):
+            shared = ", ".join(p.get("shared") or []) or "—"
+            tag = " TENSION" if p.get("tension") else ""
+            lines.append(
+                f"  [{k}] possible    {atom_text(p.get('possible'))}"
+            )
+            lines.append(
+                f"      impossible {atom_text(p.get('impossible'))}"
+            )
+            lines.append(
+                f"      JOIN {shared}  affinity={p.get('affinity', 0)}{tag}"
+            )
+    quest = doc.get("question") or []
+    if quest:
+        lines.append("question")
+        for r in quest:
+            i = r.get("index")
+            why = ",".join(r.get("why") or []) or "evaluate"
+            text = atom_text(r.get("atom"))
+            lines.append(f"  [{i}] {why:22} {text}")
+    if not hits and not polar and not quest:
+        lines.append("observe: empty lookup")
+    elif polar or quest:
+        lines.append(
+            "observe: hits answer the question; "
+            "polarity is possible × impossible on a shared join; "
+            "question atoms still need evaluation"
+        )
+    else:
+        lines.append("observe: hits only — no polarity or in-question atoms")
     return "\n".join(lines)
 
 

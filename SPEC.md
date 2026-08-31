@@ -158,7 +158,13 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
   "energy": -8.1,
   "max_size": 8,
   "seed_query": "consciousness",
-  "atoms": ["…"],
+  "atoms": [
+    {
+      "text": "…",
+      "constraint": "fact",
+      "mentions": [{"name": "JEPA", "kind": "concept"}]
+    }
+  ],
   "atom_indices": [0, 5, 7],
   "provenance": [
     { "index": 0, "source": "mine", "text": "…", "store_index": 0 },
@@ -187,11 +193,15 @@ Output of `intersect mine theirs` (∩) or `union mine theirs` (∪) — **brows
 
 Packet `kind` is `interest_union` when `require_cross` is false (`coherence union` or `intersect --union`). Union keeps one-sided atoms; a challenge with `"other": null` (`kind: none`) asks whether that atom still holds without the other surface.
 
-Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claim-text overlap **or** a shared mention with `grounding ≥ 0.5`), `garbage` (shared name with `grounding < 0.5` — unearned tag), `none` (one-sided). `grounding` is `max(compact_hit, token_cover, initialism_hit)` (aliases scored the same way). Compact form (hyphens/spaces stripped, length ≥ 3) as a substring of the compact claim; fraction of name tokens attested in the claim; or compact(name) equals the initials of a title-case phrase in the claim (`Joint Embedding Predictive Architecture` → `JEPA`). Locators are not attestation. Anaphor (`It predicts…`) **is** attested when that mention hangs on the same atom (packet/share carry the join). Score 0.6. Below 0.5 otherwise: `mention 'JEPA' not attested (0.00); put the name or ALIAS in the sentence, or drop the join`. Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
+Each overlap atom is the traveling claim: `text` plus `mentions` / `refs` / `constraint`. Hosts MUST accept strings for older overlap packets. `check --packet` on `interest_intersection` / `interest_union` uses text FAILs plus challenges, not missing-constraint.
+
+Challenge `kind`: `tension` (polarity conflict — check FAILs until resolved), `support` (claim-text overlap ≥ min_sim), `join` (grounded shared name, thin content — one per atom, not a cartesian of belief checks; affinity capped at 0.62), `garbage` (shared name with `grounding < 0.5` — unearned tag), `none` (one-sided). `grounding` is `max(compact_hit, token_cover, initialism_hit)` (aliases scored the same way). Compact form (hyphens/spaces stripped, length ≥ 3) as a substring of the compact claim; fraction of name tokens attested in the claim; or compact(name) equals the initials of a title-case phrase in the claim (`Joint Embedding Predictive Architecture` → `JEPA`). Locators are not attestation. Anaphor (`It predicts…`) **is** attested when that mention hangs on the same atom (packet/share carry the join). Score 0.6. Below 0.5 otherwise: `mention 'JEPA' not attested (0.00); put the name or ALIAS in the sentence, or drop the join`. Every `tension` counterpart is emitted; none are dropped. The clone of an atom at the same `store_index` is skipped so `intersect a a` audits each claim against the rest of the set.
 
 Hosts SHOULD re-run overlap after reject/revise, then diff with `--against previous.json` (reconstructed set vs old). Stop at a fixed point with no remaining `tension`.
 
-Cross-surface edges use lexical/stem overlap and shared mention names. Internal consistency is damped. If `require_cross` (default) and there are no cross-edges, the packet is empty — no filling from dense hubs on one side.
+**Lookup** (`coherence lookup`, `cache --packet`, or `union --lookup`) is a lexical pass over a union packet or the full ∪ of two stores. No model. Output `kind: overlap_lookup`: `hits` (query coverage, highest first), `polarity` (possible × impossible pairs that share a join or tension), `question` (pending/edited, tension, or a possibility/impossibility still to evaluate). Hits are the fast NL answer; polarity is the constructor board; question is what to evaluate next.
+
+Cross-surface edges use lexical/stem overlap and shared mention names. A grounded shared name contributes a join of **0.62**, not 1.0 — 1.0 is claim-text overlap only, so two facts about the same paper are not treated as paraphrases. Internal consistency is damped. If `require_cross` (default) and there are no cross-edges, the packet is empty — no filling from dense hubs on one side.
 
 ---
 

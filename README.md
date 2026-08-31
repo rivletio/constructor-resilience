@@ -67,6 +67,17 @@ coherence check --packet /tmp/union.json
 coherence intersect my-ai-interests lex-public --out /tmp/o2.json --against /tmp/union.json
 ```
 
+Shipped examples (CLI only, no host): two surfaces about the same paper, different facts. Shared names join; they are not paraphrases. Union is the dataset; `lookup` is the fast NL path (possible/impossible pairs + atoms still in question).
+
+```bash
+coherence import examples/demo-arxiv-passage/atoms.json --title "arXiv Transformer" --accepted --use
+coherence import examples/demo-attention-notes/atoms.json --title "Attention notes" --accepted --use
+coherence intersect arxiv-transformer attention-notes --out /tmp/o1.json
+coherence check --packet /tmp/o1.json
+coherence import /tmp/o1.json --title "Transformer overlap" --accepted --use
+coherence lookup "positional encodings" --mine arxiv-transformer --theirs attention-notes
+```
+
 ### Library
 
 ```python

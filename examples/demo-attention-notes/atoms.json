@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "description": "Reader notes on the same Transformer paper: different facts, same names. Import next to demo-arxiv-passage and intersect.",
+  "created": "2026-08-28T00:00:00Z",
+  "updated": "2026-08-28T00:00:00Z",
+  "atoms": [
+    {
+      "text": "The Transformer adds positional encodings to input embeddings because attention itself has no notion of token order.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 6,
+          "paragraph": 1,
+          "excerpt": "Since our model contains no recurrence and no convolution, in order for the model to make use of the order of the sequence, we must inject some information about the relative or absolute position of the tokens in the sequence."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "Since our model contains no recurrence and no convolution, in order for the model to make use of the order of the sequence, we must inject some information about the relative or absolute position of the tokens in the sequence.",
+        "created": "2026-08-28T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-28T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.6 §3.5"
+      }
+    },
+    {
+      "text": "On WMT 2014 English-to-German, the big Transformer reports 28.4 BLEU, more than 2.0 above the previous state of the art.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 8,
+          "paragraph": 2,
+          "excerpt": "On the WMT 2014 English-to-German translation task, the big transformer model (Transformer (big) in Table 2) outperforms the best previously reported models (including ensembles) by more than 2.0 BLEU, establishing a new state-of-the-art BLEU score of 28.4"
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "On the WMT 2014 English-to-German translation task, the big transformer model … establishing a new state-of-the-art BLEU score of 28.4",
+        "created": "2026-08-28T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-28T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.8 results"
+      }
+    },
+    {
+      "text": "The Transformer encoder is a stack of N=6 identical layers, each with multi-head self-attention and a position-wise feed-forward network.",
+      "constraint": "fact",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 3,
+          "paragraph": 2,
+          "excerpt": "The encoder is composed of a stack of N = 6 identical layers."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "The encoder is composed of a stack of N = 6 identical layers.",
+        "created": "2026-08-28T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-28T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.3 §3.1"
+      }
+    },
+    {
+      "text": "A masked Transformer decoder can be trained autoregressively on translation.",
+      "constraint": "possibility",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 3,
+          "paragraph": 4,
+          "excerpt": "We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "We also modify the self-attention sub-layer in the decoder stack to prevent positions from attending to subsequent positions.",
+        "created": "2026-08-30T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-30T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.3 decoder masking"
+      }
+    },
+    {
+      "text": "Without positional encodings the Transformer cannot distinguish token order.",
+      "constraint": "impossibility",
+      "mentions": [
+        {"name": "Transformer", "kind": "concept"}
+      ],
+      "refs": [
+        {
+          "kind": "arxiv",
+          "id": "1706.03762",
+          "page": 6,
+          "paragraph": 1,
+          "excerpt": "Since our model contains no recurrence and no convolution, in order for the model to make use of the order of the sequence, we must inject some information about the relative or absolute position of the tokens in the sequence."
+        }
+      ],
+      "provenance": {
+        "method": "manual",
+        "source": "arxiv:1706.03762",
+        "source_excerpt": "Since our model contains no recurrence and no convolution, in order for the model to make use of the order of the sequence, we must inject some information about the relative or absolute position of the tokens in the sequence.",
+        "created": "2026-08-30T00:00:00Z"
+      },
+      "review": {
+        "status": "accepted",
+        "reviewed_at": "2026-08-30T00:00:00Z",
+        "notes": "Grounded in arXiv:1706.03762 p.6 §3.5"
+      }
+    }
+  ],
+  "consistency": {}
+}

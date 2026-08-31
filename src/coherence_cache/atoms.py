@@ -44,8 +44,9 @@ def atom_texts(atoms: list) -> list[str]:
 def traveling_atom(atom: Any) -> dict:
     """Claim as it must travel in packet/share: text plus joins.
 
-    Review/provenance stay on the store. Mentions and refs stay on the claim
+    Provenance stays on the store. Mentions and refs stay on the claim
     so anaphor (`It predicts…` + JEPA) remains bound after handoff.
+    Pending/edited review status travels so lookup can mark in-question.
     """
     rec: dict[str, Any] = {"text": atom_text(atom)}
     if isinstance(atom, dict):
@@ -53,6 +54,9 @@ def traveling_atom(atom: Any) -> dict:
             v = atom.get(k)
             if v:
                 rec[k] = v
+        st = (atom.get("review") or {}).get("status")
+        if st and st not in {REVIEW_ACCEPTED, None, ""}:
+            rec["review"] = {"status": st}
     return rec
 
 
@@ -339,8 +343,9 @@ _STOP = frozenset(
 )
 
 
-def content_tokens(text: str) -> set[str]:
-    toks = set(re.findall(r"[a-z0-9']+", (text or "").lower()))
+def content_tokens(text) -> set[str]:
+    blob = atom_text(text) if not isinstance(text, str) else (text or "")
+    toks = set(re.findall(r"[a-z0-9']+", blob.lower()))
     return {t for t in toks if len(t) >= 4 and t not in _STOP}
 
 
@@ -379,7 +384,7 @@ def is_grounded(claim: str, source: str, *, min_ratio: float = 0.55) -> bool:
     return grounding_score(claim, source) >= min_ratio
 
 
-def query_overlap(query: str, claim: str) -> float:
+def query_overlap(query, claim) -> float:
     """How much a claim covers a query (for query-aware packets)."""
     q = content_tokens(query)
     if not q:

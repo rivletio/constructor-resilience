@@ -7,12 +7,17 @@ import math
 from coherence_cache.intersection import intersection_packet, overlap_challenges
 from coherence_cache.search import (
     SAMPLE_METHODS,
+    as_text,
     build_qubo,
     energy,
     find_resilient_constructors,
     greedy_resilient,
     lexical_similarity,
 )
+
+
+def _blob(doc) -> str:
+    return " ".join(as_text(a) for a in doc.get("atoms") or []).lower()
 
 # Near-dup pair is (1, 2). Support cluster is 0 with 1/3/4.
 DIVERSITY_ATOMS = [
@@ -113,7 +118,7 @@ def test_intersection_prefers_cross_links_not_internal_hubs():
         "consistency": {"0,1": 0.9, "1,2": 0.85, "0,2": 0.8},
     }
     doc = intersection_packet(mine, theirs, max_size=4, min_cross_sim=0.12)
-    blob = " ".join(doc["atoms"]).lower()
+    blob = _blob(doc)
     assert "intersection" in blob
     sources = {p["source"] for p in doc.get("provenance") or []}
     assert sources == {"mine", "theirs"}
@@ -158,31 +163,40 @@ def test_intersection_mention_join_aligns_across_wording():
         "consistency": {"0,1": 0.9},
     }
     doc = intersection_packet(mine, theirs, max_size=3, min_cross_sim=0.18)
-    blob = " ".join(doc["atoms"]).lower()
+    blob = _blob(doc)
     assert "jepa" in blob
     assert "consciousness" not in blob
 
 
-def test_intersection_structured_atoms_stay_text():
+def test_intersection_structured_atoms_travel():
     from coherence_cache.atoms import make_atom
 
     mine = {
         "atoms": [
-            make_atom("I care about world models and latent prediction."),
+            make_atom(
+                "I care about world models and latent prediction.",
+                mentions=[{"name": "world models", "kind": "concept"}],
+                constraint="fact",
+            ),
             make_atom("Share intentional interests not full stores."),
         ],
         "consistency": {"0,1": 0.6},
     }
     theirs = {
         "atoms": [
-            make_atom("Public long-form talk explores world models and understanding."),
+            make_atom(
+                "Public long-form talk explores world models and understanding.",
+                mentions=[{"name": "world models", "kind": "concept"}],
+                constraint="fact",
+            ),
             make_atom("Listeners meet creators at mutual curiosity."),
         ],
         "consistency": {"0,1": 0.7},
     }
     doc = intersection_packet(mine, theirs, max_size=4)
     assert doc["atoms"]
-    assert all(isinstance(a, str) for a in doc["atoms"])
+    assert all(isinstance(a, dict) and a.get("text") for a in doc["atoms"])
+    assert any(a.get("mentions") for a in doc["atoms"])
     assert doc.get("challenges")
     assert all(p.get("store_index") is not None for p in doc["provenance"])
 
@@ -234,7 +248,7 @@ def test_overlap_challenges_pair_cross_surface():
     assert doc["challenges"]
     paired = [c for c in doc["challenges"] if c.get("other")]
     assert paired
-    assert all(c.get("kind") in {"support", "weak", "tension"} for c in paired)
+    assert all(c.get("kind") in {"support", "join", "weak", "tension"} for c in paired)
     assert all(c.get("prompt") for c in paired)
     assert all(c.get("affinity", 0) >= 0.18 for c in paired)
 
