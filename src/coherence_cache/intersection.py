@@ -707,6 +707,16 @@ def _constraint_of(atom) -> str:
     return ""
 
 
+def _store_index_of(atom, fallback: int | None = None) -> int | None:
+    """Reject/set-review index when the atom still knows its store slot."""
+    if isinstance(atom, dict) and atom.get("store_index") is not None:
+        try:
+            return int(atom["store_index"])
+        except (TypeError, ValueError):
+            return fallback
+    return fallback
+
+
 def union_dataset(
     my_store: dict,
     their_store: dict,
@@ -720,7 +730,10 @@ def union_dataset(
     atoms: List[dict] = []
     provenance: List[dict] = []
     for i, a in enumerate(mine_raw):
-        atoms.append(traveling_atom(a))
+        rec = traveling_atom(a)
+        rec["store_index"] = mine_orig[i]
+        rec["source"] = "mine"
+        atoms.append(rec)
         provenance.append(
             {
                 "index": i,
@@ -731,7 +744,10 @@ def union_dataset(
         )
     n_mine = len(mine_raw)
     for j, b in enumerate(theirs_raw):
-        atoms.append(traveling_atom(b))
+        rec = traveling_atom(b)
+        rec["store_index"] = theirs_orig[j]
+        rec["source"] = "theirs"
+        atoms.append(rec)
         provenance.append(
             {
                 "index": n_mine + j,
@@ -786,6 +802,8 @@ def polarity_pairs(
                 {
                     "possible_index": i,
                     "impossible_index": j,
+                    "possible_store_index": _store_index_of(a, i),
+                    "impossible_store_index": _store_index_of(b, j),
                     "possible": traveling_atom(a),
                     "impossible": traveling_atom(b),
                     "affinity": round(float(s), 3),
@@ -825,6 +843,7 @@ def question_atoms(
         out.append(
             {
                 "index": i,
+                "store_index": _store_index_of(a, i),
                 "atom": traveling_atom(a),
                 "why": why,
                 "constraint": c or None,
@@ -856,6 +875,8 @@ def overlap_lookup(
     hits = [
         {
             "index": i,
+            "store_index": _store_index_of(a, i),
+            "source": a.get("source") if isinstance(a, dict) else None,
             "score": round(float(s), 3),
             "atom": traveling_atom(a),
             "constraint": _constraint_of(a) or None,

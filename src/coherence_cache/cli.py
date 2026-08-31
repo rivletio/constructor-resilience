@@ -1943,11 +1943,13 @@ def cmd_lookup(args):
         if mine_id == theirs_id:
             from .atoms import is_active, traveling_atom
 
-            recs = [
-                traveling_atom(a)
-                for a in (mine.get("atoms") or [])
-                if is_active(a)
-            ]
+            recs = []
+            for i, a in enumerate(mine.get("atoms") or []):
+                if not is_active(a):
+                    continue
+                rec = traveling_atom(a)
+                rec["store_index"] = i
+                recs.append(rec)
             doc = {
                 "version": 1,
                 "kind": "interest_union",

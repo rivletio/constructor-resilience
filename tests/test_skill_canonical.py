@@ -12,6 +12,8 @@ def test_canonical_skill_is_the_protocol():
     assert "lookup" in text
     assert "JOIN" in text
     assert "<SENTENCE>" in text
+    assert "Keep / drop" in text
+    assert "set-review" in text
     assert "JEPA" not in text
     assert "GLiNER" not in text
 

@@ -231,6 +231,21 @@ def format_overlap_check(doc: dict) -> str:
     return "\n".join(lines)
 
 
+def _lookup_label(rec: dict) -> str:
+    """Store index for reject/set-review; union index only if unknown."""
+    si = rec.get("store_index")
+    src = rec.get("source")
+    atom = rec.get("atom")
+    if si is None and isinstance(atom, dict):
+        si = atom.get("store_index")
+        src = src or atom.get("source")
+    if si is None:
+        si = rec.get("index")
+    if src and src not in ("mine", ""):
+        return f"{src}:{si}"
+    return str(si)
+
+
 def format_overlap_lookup(doc: dict) -> str:
     """Human board: NL hits, possible/impossible pairs, atoms in question."""
     q = doc.get("query") or ""
@@ -246,21 +261,24 @@ def format_overlap_lookup(doc: dict) -> str:
     elif hits:
         lines.append("hits")
         for h in hits:
-            i = h.get("index")
             cons = h.get("constraint") or "—"
             text = atom_text(h.get("atom"))
-            lines.append(f"  [{i}] {h.get('score', 0):.2f}  {cons:13} {text}")
+            lines.append(
+                f"  [{_lookup_label(h)}] {h.get('score', 0):.2f}  {cons:13} {text}"
+            )
     polar = doc.get("polarity") or []
     if polar:
         lines.append("polarity")
         for k, p in enumerate(polar):
             shared = ", ".join(p.get("shared") or []) or "—"
             tag = " TENSION" if p.get("tension") else ""
+            poss_i = p.get("possible_store_index", p.get("possible_index"))
+            imp_i = p.get("impossible_store_index", p.get("impossible_index"))
             lines.append(
-                f"  [{k}] possible    {atom_text(p.get('possible'))}"
+                f"  [{k}] possible    [{poss_i}] {atom_text(p.get('possible'))}"
             )
             lines.append(
-                f"      impossible {atom_text(p.get('impossible'))}"
+                f"      impossible [{imp_i}] {atom_text(p.get('impossible'))}"
             )
             lines.append(
                 f"      JOIN {shared}  affinity={p.get('affinity', 0)}{tag}"
@@ -269,10 +287,9 @@ def format_overlap_lookup(doc: dict) -> str:
     if quest:
         lines.append("question")
         for r in quest:
-            i = r.get("index")
             why = ",".join(r.get("why") or []) or "evaluate"
             text = atom_text(r.get("atom"))
-            lines.append(f"  [{i}] {why:22} {text}")
+            lines.append(f"  [{_lookup_label(r)}] {why:22} {text}")
     if not hits and not polar and not quest:
         lines.append("observe: empty lookup")
     elif polar or quest:

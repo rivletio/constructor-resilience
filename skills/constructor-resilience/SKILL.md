@@ -14,13 +14,13 @@ license: AGPL-3.0-or-later
 compatibility: Requires Python 3.10+. First `bin/coherence` next to this file installs the CLI if needed.
 metadata:
   author: Rivlet
-  version: "0.1.12"
+  version: "0.1.13"
   homepage: https://github.com/rivletio/constructor-resilience-skill
   upstream: https://github.com/rivletio/constructor-resilience
 when-to-use: >
   pack this session, digest this into claims, handoff, share what we
-  decided, cache this research, lookup over a union, intersect, challenge
-  atoms in question
+  decided, cache this research, lookup over a union, keep or drop a
+  constructor, intersect, challenge atoms in question
 ---
 
 # Constructor Resilience
@@ -39,7 +39,7 @@ Store: `$COHERENCE_ROOT` or `$PWD/.coherence`. Do **not** run `coherence review 
 
 ### Resume
 
-`coherence cache "theme"` (or `use <topic-id>`). Read the **packet** before new work. Cache rewrites only the **top** topic's packet; other matches are listed, not overwritten.
+`coherence cache "theme"` (or `use <topic-id>`). Read the **packet** before new work. Cache rewrites only the **top** topic's packet; other matches are listed, not overwritten. The packet is resume (small). Constructors live on **lookup over the union**, not on the greedy 6.
 
 If that misses, pack — do not stop at CACHE MISS.
 
@@ -63,7 +63,7 @@ ALIAS: <PHRASE THAT APPEARS IN THE CLAIM>
 
 Replace every `<SLOT>`. If a slot is still in angle brackets, that claim FAILs — rewrite from the session.
 
-`CONSTRAINT`: `possibility` | `impossibility` | `fact` | `decision`.
+`CONSTRAINT`: `possibility` | `impossibility` | `fact` | `decision`. Per-claim `CONSTRAINT:` in the draft; CLI `--constraint` is a default for every `--atom`.
 
 **Joins** (`person` | `org` | `work` | `place` | `concept` | `other`): names the claim is *about*. Attest the name in **this** CLAIM, then act on FAIL:
 
@@ -144,7 +144,18 @@ coherence lookup "<QUESTION>" --mine <id> --theirs <id>
 coherence lookup "<QUESTION>" --packet /tmp/o1.json
 ```
 
-Hits are query-ranked atoms. `polarity` is possible × impossible on a shared join. `question` is pending, tension, or a constructor (possibility/impossibility) still to evaluate.
+Hits are query-ranked atoms. `polarity` is possible × impossible on a shared join. `question` is pending, tension, or a constructor (possibility/impossibility) still to evaluate. Same id (`--mine X --theirs X`) is the full topic, not a clone.
+
+**Keep / drop** (from polarity + question — not from the greedy packet)
+
+A keep still holds **and** carries sources. A drop is falsified. Unpublished is allowed; made-up papers are not.
+
+Bracket numbers are **store** indices (`reject N` / `set-review N`), not positions in the lookup list.
+
+- **Keep** — refs on the atom for every published work it composes (`AT: arxiv:YYYY.NNNNN`). Then `coherence set-review N --status accepted --notes "arxiv:… why it holds"`.
+- **Drop** — `coherence reject N --reason "…"` citing the counterpart (later atom or paper). Pack **one** replacement if the core is still true without the overclaim.
+
+An unpublished possibility hangs the papers it combines, not a fake id. Do not keep a constructor with empty `refs`.
 
 ### Optional local MLX (Apple Silicon)
 

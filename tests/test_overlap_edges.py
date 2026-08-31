@@ -751,6 +751,53 @@ def test_lookup_same_topic_does_not_clone_atoms(tmp_path, capsys):
     assert len(texts) == len(set(texts))
 
 
+def test_lookup_brackets_are_store_index_after_reject(tmp_path, capsys):
+    """After a hole, reject N must be the store slot, not the compacted list."""
+    from coherence_cache.check import format_overlap_lookup
+
+    root = tmp_path / ".coherence"
+    draft = tmp_path / "idx.txt"
+    draft.write_text(
+        "TITLE: Store index lookup\n"
+        "CONSTRAINT: fact\n"
+        "CLAIM: VL-JEPA predicts continuous embeddings of target texts rather than tokens.\n"
+        "MENTION: VL-JEPA:work\n"
+        "CONSTRAINT: possibility\n"
+        "CLAIM: An RWKV-7-class model can fill the VL-JEPA predictor slot in embedding space.\n"
+        "MENTION: VL-JEPA:work\n"
+        "CONSTRAINT: impossibility\n"
+        "CLAIM: Token-space VisualRWKV-7 generation is not a VL-JEPA language interface.\n"
+        "MENTION: VL-JEPA:work\n",
+        encoding="utf-8",
+    )
+    _run(root, "pack", "--draft", str(draft))
+    capsys.readouterr()
+    _run(root, "reject", "0", "--reason", "hole so store index is not union index")
+    capsys.readouterr()
+    _run(
+        root,
+        "lookup",
+        "VL-JEPA predictor",
+        "--mine",
+        "store-index-lookup",
+        "--theirs",
+        "store-index-lookup",
+        "--out",
+        str(tmp_path / "lu.json"),
+    )
+    out = capsys.readouterr().out
+    assert "[1]" in out and "[2]" in out
+    assert "possible    [1]" in out
+    assert "impossible [2]" in out
+    doc = json.loads((tmp_path / "lu.json").read_text(encoding="utf-8"))
+    assert {h["store_index"] for h in doc["hits"]} <= {1, 2}
+    q_store = {r["store_index"] for r in doc["question"]}
+    assert 1 in q_store and 2 in q_store
+    printed = format_overlap_lookup(doc)
+    assert "possible    [1]" in printed
+    assert "impossible [2]" in printed
+
+
 def test_cli_lookup_union_of_examples(tmp_path, capsys):
     examples = Path(__file__).resolve().parents[1] / "examples"
     root = tmp_path / ".coherence"
