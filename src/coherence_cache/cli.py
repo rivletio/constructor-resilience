@@ -381,6 +381,11 @@ class ClaimParts(argparse.Action):
             loc = parse_at_flag(values)
             if not loc:
                 return
+            if loc.get("kind") == "arxiv":
+                refs = bag[-1].setdefault("refs", [])
+                if loc not in refs:
+                    refs.append(loc)
+                return
             mentions = bag[-1].get("mentions") or []
             if mentions:
                 mentions[-1].update(loc)
@@ -1341,7 +1346,7 @@ def cmd_cache(args):
 
     top = ranked[: max(1, args.topics)]
     print(f"CACHE HIT — {len(top)} topic(s) for query")
-    for score, inter, t in top:
+    for i, (score, inter, t) in enumerate(top):
         path = topic_atoms_path(t)
         store = load_json(path, {})
         atoms = store.get("atoms") or []
@@ -1359,12 +1364,15 @@ def cmd_cache(args):
         print(f"  packet E={eng:.3f} size={len(selected)}")
         for a in selected:
             print(f"  • {atom_text(a)}")
-        doc = build_packet_doc(
-            t["id"], atoms, selected, eng, "greedy-cache",
-            args.max_size, args.redundancy_scale, query=args.query,
-        )
-        out = write_packet(path, doc)
-        print(f"  wrote {out}")
+        if i == 0:
+            doc = build_packet_doc(
+                t["id"], atoms, selected, eng, "greedy-cache",
+                args.max_size, args.redundancy_scale, query=args.query,
+            )
+            out = write_packet(path, doc)
+            print(f"  wrote {out}")
+        else:
+            print("  (listed only — packet left in place)")
 
     # show meta neighbors of top topic
     links = meta.get("links") or []
@@ -1932,7 +1940,25 @@ def cmd_lookup(args):
             return store
 
         mine, theirs = load_topic(mine_id), load_topic(theirs_id)
-        if getattr(args, "intersect", False):
+        if mine_id == theirs_id:
+            from .atoms import is_active, traveling_atom
+
+            recs = [
+                traveling_atom(a)
+                for a in (mine.get("atoms") or [])
+                if is_active(a)
+            ]
+            doc = {
+                "version": 1,
+                "kind": "interest_union",
+                "method": "lookup_topic",
+                "atoms": recs,
+                "challenges": [],
+                "n_mine": len(recs),
+                "n_theirs": 0,
+                "require_cross": False,
+            }
+        elif getattr(args, "intersect", False):
             doc = intersection_packet(
                 mine,
                 theirs,
@@ -2097,7 +2123,7 @@ def main(argv=None):
         action=ClaimParts,
         dest="claim_parts",
         metavar="LOC",
-        help="Where: after --atom locates the claim; after --mention locates the join (path:line, t=seconds, URL)",
+        help="Where: after --atom locates the claim; after --mention locates the join (path:line, t=seconds, arxiv:ID, URL)",
     )
     p_ingest.add_argument("--json", help="Path to JSON list, {atoms:[...]}, or one atom")
     p_ingest.add_argument(
@@ -2150,7 +2176,7 @@ def main(argv=None):
         action=ClaimParts,
         dest="claim_parts",
         metavar="LOC",
-        help="Where: after --atom locates the claim; after --mention locates the join (path:line, t=seconds, URL)",
+        help="Where: after --atom locates the claim; after --mention locates the join (path:line, t=seconds, arxiv:ID, URL)",
     )
     p_pack.add_argument("--json", help="Path to claims JSON")
     p_pack.add_argument(

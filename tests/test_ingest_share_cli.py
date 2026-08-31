@@ -190,6 +190,11 @@ def test_pack_mention_at_file_line_and_timestamp(tmp_path, capsys):
     assert span["url"].endswith("#L10-L12")
     ts = parse_at_flag("t=3033")
     assert ts["t"] == 3033 and ts["t_label"] == "50:33"
+    ax = parse_at_flag("arxiv:2512.10942")
+    assert ax.get("kind") == "arxiv"
+    assert ax.get("id") == "2512.10942"
+    assert "path" not in ax
+    assert "arxiv.org/abs/2512.10942" in (ax.get("abs") or ax.get("url") or "")
 
     root = tmp_path / ".coherence"
     with pytest.raises(SystemExit) as exc:
@@ -329,6 +334,57 @@ def test_pack_draft_and_forgiving_locators(tmp_path, capsys):
     assert "FAIL" not in out or "check 1/1 PASS" in out
     store = _load(root / "topics" / "draft-pack" / "atoms.json")
     assert store["atoms"][0]["mentions"][0]["line"] == 20
+
+
+def test_pack_draft_arxiv_at_becomes_ref_not_path(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    draft = tmp_path / "ax.txt"
+    draft.write_text(
+        "TITLE: Paper cite\nCONSTRAINT: fact\n"
+        "CLAIM: VL-JEPA predicts continuous embeddings of target texts rather than tokens.\n"
+        "MENTION: VL-JEPA:work\n"
+        "AT: arxiv:2512.10942\n",
+        encoding="utf-8",
+    )
+    _run(root, "pack", "--draft", str(draft))
+    store = _load(root / "topics" / "paper-cite" / "atoms.json")
+    atom = store["atoms"][0]
+    assert not (atom.get("at") or {}).get("path")
+    refs = atom.get("refs") or []
+    assert any(r.get("kind") == "arxiv" and r.get("id") == "2512.10942" for r in refs)
+    assert all(not m.get("path") for m in (atom.get("mentions") or []))
+    capsys.readouterr()
+    _run(root, "check")
+    assert "check 1/1 PASS" in capsys.readouterr().out
+
+
+def test_pack_cli_arxiv_at_becomes_ref_not_mention_kind(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "CLI arxiv locator",
+        "--constraint",
+        "fact",
+        "--atom",
+        "VL-JEPA predicts continuous embeddings of target texts rather than tokens.",
+        "--mention",
+        "VL-JEPA:work",
+        "--at",
+        "arxiv:2512.10942",
+    )
+    store = _load(root / "topics" / "cli-arxiv-locator" / "atoms.json")
+    atom = store["atoms"][0]
+    mentions = atom.get("mentions") or []
+    assert mentions and mentions[0].get("kind") == "work"
+    assert mentions[0].get("name") == "VL-JEPA"
+    assert "path" not in (mentions[0] or {})
+    refs = atom.get("refs") or []
+    assert any(r.get("kind") == "arxiv" and r.get("id") == "2512.10942" for r in refs)
+    capsys.readouterr()
+    _run(root, "check")
+    assert "check 1/1 PASS" in capsys.readouterr().out
 
 
 def test_check_fails_missing_mentions_and_retries(tmp_path, capsys):
@@ -603,6 +659,48 @@ def test_cache_tied_scores_do_not_crash(tmp_path, capsys):
     assert "CACHE HIT" in out
     assert "alpha-theme" in out
     assert "beta-theme" in out
+
+
+def test_cache_rewrites_only_top_topic_packet(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    _run(
+        root,
+        "pack",
+        "--title",
+        "JEPA language",
+        "--constraint",
+        "fact",
+        "--atom",
+        "VL-JEPA predicts continuous embeddings of target texts rather than tokens.",
+        "--mention",
+        "VL-JEPA:work",
+    )
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Share language",
+        "--constraint",
+        "fact",
+        "--atom",
+        "Share language is atoms and packets, not transcripts.",
+        "--mention",
+        "packet:concept",
+    )
+    other = root / "topics" / "share-language" / "packet.json"
+    before = other.read_text(encoding="utf-8")
+    capsys.readouterr()
+    _run(root, "cache", "VL-JEPA embeddings language")
+    out = capsys.readouterr().out
+    assert "jepa-language" in out
+    assert "wrote" in out
+    assert "share-language" in out
+    assert "listed only" in out
+    assert other.read_text(encoding="utf-8") == before
+    top_pkt = json.loads(
+        (root / "topics" / "jepa-language" / "packet.json").read_text(encoding="utf-8")
+    )
+    assert top_pkt.get("query") == "VL-JEPA embeddings language"
 
 
 def test_cache_miss_points_at_ingest(tmp_path, capsys):

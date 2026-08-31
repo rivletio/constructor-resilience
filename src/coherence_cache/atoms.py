@@ -390,7 +390,15 @@ def query_overlap(query, claim) -> float:
     if not q:
         return 0.0
     c = content_tokens(claim)
-    return len(q & c) / len(q)
+    if not c:
+        return 0.0
+    hit = 0
+    for t in q:
+        if t in c or any(
+            t in u or u in t for u in c if min(len(t), len(u)) >= 4
+        ):
+            hit += 1
+    return hit / len(q)
 
 
 def _unwrap_mint_item(item: Any) -> str | None:

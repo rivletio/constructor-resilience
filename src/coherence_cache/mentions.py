@@ -363,10 +363,18 @@ def _fill_mention_locator(rec: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_at_flag(raw: str) -> dict[str, Any]:
-    """Locator: ``path:LINE``, ``path#L42-L48``, ``t=SECONDS``, ``p.N ¶M``, or a URL."""
+    """Locator: ``path:LINE``, ``arxiv:ID``, ``t=SECONDS``, ``p.N ¶M``, or a URL."""
     text = (raw or "").strip().strip("'\"")
     if not text:
         return {}
+    from .refs_util import make_arxiv_ref, normalize_arxiv_id, parse_arxiv_url
+
+    ax = re.match(r"(?i)^arxiv:(\d{4}\.\d{4,5})(?:v\d+)?$", text)
+    if ax:
+        return make_arxiv_ref(normalize_arxiv_id(ax.group(1)))
+    parsed_ax = parse_arxiv_url(text)
+    if parsed_ax:
+        return parsed_ax
     yt = parse_youtube_url(text)
     if yt:
         out: dict[str, Any] = {"url": yt["url"]}
@@ -493,6 +501,11 @@ def parse_pack_draft(blob: str, default_constraint: str | None = "fact") -> tupl
         elif key == "AT" and current is not None:
             loc = parse_at_flag(val)
             if not loc:
+                continue
+            if loc.get("kind") == "arxiv":
+                refs = current.setdefault("refs", [])
+                if loc not in refs:
+                    refs.append(loc)
                 continue
             mentions = current.get("mentions") or []
             if mentions:

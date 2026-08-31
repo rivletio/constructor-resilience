@@ -11,6 +11,7 @@ only computes the overlap packet.
 
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from .atoms import (
@@ -114,8 +115,8 @@ def _parse_consistency(store: dict) -> Dict[Pair, float]:
 
 
 def _canonical_join_names(names: Sequence[str]) -> list[str]:
-    """Dedupe 'the Name' / 'Name' for JOIN display."""
-    out: List[str] = []
+    """Dedupe 'the Name' / 'Name'; drop fragments inside a longer attested name."""
+    cleaned: List[str] = []
     seen: set[str] = set()
     for n in names:
         n = str(n or "").strip().lower()
@@ -124,6 +125,16 @@ def _canonical_join_names(names: Sequence[str]) -> list[str]:
         if not n or n in seen:
             continue
         seen.add(n)
+        cleaned.append(n)
+    compact = {n: re.sub(r"[^a-z0-9]+", "", n) for n in cleaned}
+    out: List[str] = []
+    for n in cleaned:
+        cn = compact[n]
+        if cn and any(
+            cn != compact[o] and cn in compact[o] and len(cn) < len(compact[o])
+            for o in cleaned
+        ):
+            continue
         out.append(n)
     return out
 
@@ -763,7 +774,9 @@ def polarity_pairs(
     for i, a in poss:
         for j, b in imp:
             s = cross_affinity(a, b)
-            tense = claims_tension(a, b)
+            # Join-only possible×impossible is the polarity board, not a
+            # content contradiction. TENSION needs real claim-text overlap.
+            tense = claims_tension(a, b) and content_affinity(a, b) >= 0.4
             if s < min_sim and not tense:
                 continue
             shared = _canonical_join_names(
@@ -867,15 +880,16 @@ def overlap_lookup(
     quest = question_atoms(atoms, doc.get("challenges") or [])
     if q and quest and hits:
         hit_idx = {h["index"] for h in hits}
-        related_q = [r for r in quest if r["index"] in hit_idx]
-        # keep constructor/pending even if they missed the query tokens
-        extra = [
+        polar_idx = {p["possible_index"] for p in polar} | {
+            p["impossible_index"] for p in polar
+        }
+        keep_idx = hit_idx | polar_idx
+        quest = [
             r
             for r in quest
-            if r["index"] not in hit_idx
-            and any(w in r["why"] for w in ("pending", "edited", "tension"))
+            if r["index"] in keep_idx
+            or any(w in r["why"] for w in ("pending", "edited", "tension"))
         ]
-        quest = related_q + extra
     return {
         "version": 1,
         "kind": "overlap_lookup",

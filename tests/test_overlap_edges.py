@@ -17,6 +17,7 @@ from coherence_cache.check import (
 from coherence_cache.cli import main
 from coherence_cache.intersection import (
     MENTION_JOIN_AFFINITY,
+    _canonical_join_names,
     claims_tension,
     compare_overlap,
     content_affinity,
@@ -427,6 +428,13 @@ def test_intersect_topic_with_itself(tmp_path, capsys):
     assert "matches previous" in against_out
 
 
+def test_canonical_join_names_drop_fragments():
+    assert _canonical_join_names(["vl-jepa", "jepa", "vl", "the transformer"]) == [
+        "vl-jepa",
+        "transformer",
+    ]
+
+
 def test_shared_work_name_is_join_not_paraphrase():
     """Two facts about the same paper must both survive an overlap packet."""
     paper = "Attention Is All You Need"
@@ -567,6 +575,14 @@ def test_cli_import_examples_and_intersect(tmp_path, capsys):
     assert any((a.get("refs") or []) for a in imported["atoms"])
 
 
+def test_query_overlap_matches_versioned_model_names():
+    from coherence_cache.atoms import query_overlap
+
+    claim = "JEPA-WAM instantiates the shared embedding-space predictor as Qwen2.5-0.5B."
+    assert query_overlap("Qwen JEPA-WAM predictor", claim) >= 0.6
+    assert query_overlap("giraffe zebra", claim) == 0.0
+
+
 def test_lookup_miss_and_empty_query_are_empty_hits():
     from coherence_cache.intersection import overlap_lookup
 
@@ -655,6 +671,84 @@ def test_union_lookup_hits_polarity_and_question():
     assert "polarity" in printed
     assert "question" in printed
     assert "positional" in printed.lower()
+
+
+def test_lookup_question_keeps_polarity_constructors():
+    """A query that hits a fact still keeps possible×impossible on the board."""
+    from coherence_cache.intersection import overlap_lookup
+
+    vl = {"name": "VL-JEPA", "kind": "work"}
+    atoms = [
+        make_atom(
+            "VL-JEPA predicts continuous embeddings of target texts rather than tokens.",
+            constraint="fact",
+            mentions=[vl],
+            review_status="accepted",
+        ),
+        make_atom(
+            "A recursive graph of RWKV-7-class nodes can exchange JEPA latents under constant memory.",
+            constraint="possibility",
+            mentions=[vl, {"name": "RWKV-7", "kind": "work"}],
+            review_status="accepted",
+        ),
+        make_atom(
+            "Swapping Llama 3.1 8B for VisualRWKV-7 token generation does not yield a VL-JEPA language interface.",
+            constraint="impossibility",
+            mentions=[vl, {"name": "VisualRWKV-7", "kind": "work"}],
+            review_status="accepted",
+        ),
+    ]
+    lu = overlap_lookup({"atoms": atoms, "challenges": []}, "continuous embeddings of target texts")
+    assert lu["hits"]
+    assert all("continuous embeddings" in as_text(h["atom"]).lower() for h in lu["hits"][:1])
+    assert lu["polarity"], "shared VL-JEPA join should pair possibility with impossibility"
+    polar_idx = {p["possible_index"] for p in lu["polarity"]} | {
+        p["impossible_index"] for p in lu["polarity"]
+    }
+    q_idx = {r["index"] for r in lu["question"]}
+    assert polar_idx <= q_idx
+    whys = {w for r in lu["question"] for w in r["why"]}
+    assert "possibility" in whys and "impossibility" in whys
+    assert not lu["polarity"][0].get("tension"), (
+        "a shared join is polarity, not a content contradiction"
+    )
+
+
+def test_lookup_same_topic_does_not_clone_atoms(tmp_path, capsys):
+    root = tmp_path / ".coherence"
+    draft = tmp_path / "same-id.txt"
+    draft.write_text(
+        "TITLE: Same-id lookup\n"
+        "CONSTRAINT: fact\n"
+        "CLAIM: VL-JEPA predicts continuous embeddings of target texts rather than tokens.\n"
+        "MENTION: VL-JEPA:work\n"
+        "CONSTRAINT: possibility\n"
+        "CLAIM: A recursive graph of RWKV-7 nodes can exchange VL-JEPA latents.\n"
+        "MENTION: VL-JEPA:work\n"
+        "CONSTRAINT: impossibility\n"
+        "CLAIM: Token-space VisualRWKV-7 generation is not a VL-JEPA language interface.\n"
+        "MENTION: VL-JEPA:work\n",
+        encoding="utf-8",
+    )
+    _run(root, "pack", "--draft", str(draft))
+    capsys.readouterr()
+    _run(
+        root,
+        "lookup",
+        "continuous embeddings",
+        "--mine",
+        "same-id-lookup",
+        "--theirs",
+        "same-id-lookup",
+        "--out",
+        str(tmp_path / "lu.json"),
+    )
+    out = capsys.readouterr().out
+    assert "hits=" in out and "/3" in out
+    doc = json.loads((tmp_path / "lu.json").read_text(encoding="utf-8"))
+    assert doc["n_union"] == 3
+    texts = [as_text(h["atom"]) for h in doc["hits"]]
+    assert len(texts) == len(set(texts))
 
 
 def test_cli_lookup_union_of_examples(tmp_path, capsys):

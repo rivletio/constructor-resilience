@@ -14,7 +14,7 @@ license: AGPL-3.0-or-later
 compatibility: Requires Python 3.10+. First `bin/coherence` next to this file installs the CLI if needed.
 metadata:
   author: Rivlet
-  version: "0.1.11"
+  version: "0.1.12"
   homepage: https://github.com/rivletio/constructor-resilience-skill
   upstream: https://github.com/rivletio/constructor-resilience
 when-to-use: >
@@ -39,7 +39,7 @@ Store: `$COHERENCE_ROOT` or `$PWD/.coherence`. Do **not** run `coherence review 
 
 ### Resume
 
-`coherence cache "theme"` (or `use <topic-id>`). Read the **packet** before new work.
+`coherence cache "theme"` (or `use <topic-id>`). Read the **packet** before new work. Cache rewrites only the **top** topic's packet; other matches are listed, not overwritten.
 
 If that misses, pack — do not stop at CACHE MISS.
 
@@ -75,7 +75,7 @@ Replace every `<SLOT>`. If a slot is still in angle brackets, that claim FAILs �
 
 `It predicts…` + `MENTION: <NAME>` is attested: packet/share keep that mention **on that claim**. Prefer the name in the sentence when easy; do not FAIL the pronoun if the join travels.
 
-Locators: `path:LINE`, `t=SECONDS`, `p.N ¶M`. Conversation-only concepts may omit mention AT. Compact variants count (hyphens/spaces dropped). Never Python, never invent a JSON file, never reuse leftover example sentences.
+Locators: `path:LINE`, `t=SECONDS`, `p.N ¶M`, `arxiv:YYYY.NNNNN` (becomes a **ref**, not a file path). Conversation-only concepts may omit mention AT. Compact variants count (hyphens/spaces dropped). Never Python, never invent a JSON file, never reuse leftover example sentences.
 
 Shell flags still work (`--atom` / `--mention` / `--at`) if you can quote them. Draft is the small-model path. Numbered claims (`1 <SENTENCE>`) count as `CLAIM:` (tiny hosts often skip the label).
 
