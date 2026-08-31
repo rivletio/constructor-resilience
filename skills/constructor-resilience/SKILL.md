@@ -14,7 +14,7 @@ license: AGPL-3.0-or-later
 compatibility: Requires Python 3.10+. First `bin/coherence` next to this file installs the CLI if needed.
 metadata:
   author: Rivlet
-  version: "0.1.13"
+  version: "0.1.14"
   homepage: https://github.com/rivletio/constructor-resilience-skill
   upstream: https://github.com/rivletio/constructor-resilience
 when-to-use: >
@@ -175,6 +175,9 @@ Keep private claims off public topics. Share only with `coherence share`.
 
 ## Docs
 
-[SPEC.md](https://github.com/rivletio/constructor-resilience/blob/main/SPEC.md) ·
-[USER_MANUAL.md](https://github.com/rivletio/constructor-resilience/blob/main/docs/USER_MANUAL.md) ·
-[README.md](https://github.com/rivletio/constructor-resilience/blob/main/README.md)
+These files sit **next to this SKILL.md** so `read_file` on the skill
+path works (no GitHub round-trip, no missing relative docs):
+
+- [`SPEC.md`](SPEC.md)
+- [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)
+- [`README.md`](README.md)
