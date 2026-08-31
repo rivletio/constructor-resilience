@@ -18,7 +18,7 @@ You don’t share the transcript. You share what you chose to keep.
 npx skills add rivletio/constructor-resilience-skill
 ```
 
-Then tell the agent: *pack this session*. Installs via that command are counted on [skills.sh](https://skills.sh/rivletio/constructor-resilience-skill). `coherence` itself does not report usage.
+Then tell the agent: *pack this session*.
 
 Or clone [`constructor-resilience-skill`](https://github.com/rivletio/constructor-resilience-skill) and run `./install.sh` (links the skill and puts `coherence` on PATH). If `coherence` is missing, `bin/coherence` next to `SKILL.md` installs it.
 
