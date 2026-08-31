@@ -106,7 +106,9 @@ def test_pack_from_empty_store_writes_packet(tmp_path, capsys):
     assert "pack --title" in hint
     assert "Pack claims" in hint
 
-    _run(root, "pack", "--json", str(claims), "--title", "Share primitive")
+    with pytest.raises(SystemExit) as packed:
+        _run(root, "pack", "--json", str(claims), "--title", "Share primitive")
+    assert packed.value.code == 1
     out = capsys.readouterr().out
     assert "packed share-primitive" in out
     topic = root / "topics" / "share-primitive"
@@ -151,22 +153,24 @@ def test_packet_and_share_keep_mentions_on_each_claim(tmp_path, capsys):
 
 def test_pack_mention_flag_joins_last_atom(tmp_path, capsys):
     root = tmp_path / ".coherence"
-    _run(
-        root,
-        "pack",
-        "--title",
-        "Joins",
-        "--constraint",
-        "fact",
-        "--atom",
-        "RWKV-7 has constant memory and constant time per token.",
-        "--mention",
-        "RWKV-7:work",
-        "--mention",
-        "compressive state:concept",
-        "--atom",
-        "Packets are the share unit, not transcripts.",
-    )
+    with pytest.raises(SystemExit) as exc:
+        _run(
+            root,
+            "pack",
+            "--title",
+            "Joins",
+            "--constraint",
+            "fact",
+            "--atom",
+            "RWKV-7 has constant memory and constant time per token.",
+            "--mention",
+            "RWKV-7:work",
+            "--mention",
+            "compressive state:concept",
+            "--atom",
+            "Packets are the share unit, not transcripts.",
+        )
+    assert exc.value.code == 1
     store = _load(root / "topics" / "joins" / "atoms.json")
     names0 = {(m["name"], m["kind"]) for m in store["atoms"][0].get("mentions") or []}
     assert ("RWKV-7", "work") in names0
@@ -188,24 +192,26 @@ def test_pack_mention_at_file_line_and_timestamp(tmp_path, capsys):
     assert ts["t"] == 3033 and ts["t_label"] == "50:33"
 
     root = tmp_path / ".coherence"
-    _run(
-        root,
-        "pack",
-        "--title",
-        "Located joins",
-        "--constraint",
-        "fact",
-        "--atom",
-        "ClaimParts attaches joins to the preceding atom.",
-        "--mention",
-        "ClaimParts:concept",
-        "--at",
-        "src/coherence_cache/cli.py:358",
-        "--mention",
-        "Lex Fridman:person",
-        "--at",
-        "https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033",
-    )
+    with pytest.raises(SystemExit) as exc:
+        _run(
+            root,
+            "pack",
+            "--title",
+            "Located joins",
+            "--constraint",
+            "fact",
+            "--atom",
+            "ClaimParts attaches joins to the preceding atom.",
+            "--mention",
+            "ClaimParts:concept",
+            "--at",
+            "src/coherence_cache/cli.py:358",
+            "--mention",
+            "Lex Fridman:person",
+            "--at",
+            "https://www.youtube.com/watch?v=qCbfTN-caFI&t=3033",
+        )
+    assert exc.value.code == 1
     store = _load(root / "topics" / "located-joins" / "atoms.json")
     m0, m1 = store["atoms"][0]["mentions"]
     assert m0["path"] == "src/coherence_cache/cli.py"
@@ -365,16 +371,18 @@ def test_check_fails_missing_mentions_and_retries(tmp_path, capsys):
     assert any("no line" in f for f in check_atom(bad_file))
 
     root = tmp_path / ".coherence"
-    _run(
-        root,
-        "pack",
-        "--title",
-        "Bare",
-        "--constraint",
-        "fact",
-        "--atom",
-        "Packets are the share unit, not transcripts.",
-    )
+    with pytest.raises(SystemExit) as exc:
+        _run(
+            root,
+            "pack",
+            "--title",
+            "Bare",
+            "--constraint",
+            "fact",
+            "--atom",
+            "Packets are the share unit, not transcripts.",
+        )
+    assert exc.value.code == 1
     out = capsys.readouterr().out
     assert "FAIL missing mentions" in out
     with pytest.raises(SystemExit) as exc:
@@ -505,8 +513,12 @@ def test_cache_ignores_weak_tokens(tmp_path, capsys):
         "pack",
         "--title",
         "Packet search",
+        "--constraint",
+        "fact",
         "--atom",
         "A packet is a small subset of atoms maximizing coverage.",
+        "--mention",
+        "packet:concept",
     )
     capsys.readouterr()
     _run(root, "cache", "small-world scale-free co-authorship")
@@ -529,8 +541,12 @@ def test_pack_atoms_flags_no_json_file(tmp_path, capsys):
         "fact",
         "--atom",
         "Packets are the share unit, not transcripts.",
+        "--mention",
+        "packet:concept",
         "--atom",
         "Mentions hang on a claim, not a second graph.",
+        "--mention",
+        "mention:concept",
     )
     out = capsys.readouterr().out
     assert "packed no-file" in out
@@ -557,8 +573,30 @@ def test_pack_atoms_flags_no_json_file(tmp_path, capsys):
 
 def test_cache_tied_scores_do_not_crash(tmp_path, capsys):
     root = tmp_path / ".coherence"
-    _run(root, "pack", "--title", "Alpha theme", "--atom", "Durable packet claim one.")
-    _run(root, "pack", "--title", "Beta theme", "--atom", "Durable packet claim two.")
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Alpha theme",
+        "--constraint",
+        "fact",
+        "--atom",
+        "Durable packet claim one.",
+        "--mention",
+        "packet:concept",
+    )
+    _run(
+        root,
+        "pack",
+        "--title",
+        "Beta theme",
+        "--constraint",
+        "fact",
+        "--atom",
+        "Durable packet claim two.",
+        "--mention",
+        "packet:concept",
+    )
     capsys.readouterr()
     _run(root, "cache", "durable packet claim")
     out = capsys.readouterr().out

@@ -696,7 +696,13 @@ def _constraint_of(atom) -> str:
     return ""
 
 
-def union_dataset(my_store: dict, their_store: dict, *, min_sim: float = 0.18) -> dict:
+def union_dataset(
+    my_store: dict,
+    their_store: dict,
+    *,
+    min_sim: float = 0.18,
+    with_challenges: bool = True,
+) -> dict:
     """Full ∪ of two stores — no greedy cut. Fast-path lookup dataset."""
     mine_raw, _, mine_orig = _active_view(my_store)
     theirs_raw, _, theirs_orig = _active_view(their_store)
@@ -729,8 +735,12 @@ def union_dataset(my_store: dict, their_store: dict, *, min_sim: float = 0.18) -
         "method": "union_dataset",
         "atoms": atoms,
         "provenance": provenance,
-        "challenges": overlap_challenges(
-            provenance, my_store, their_store, min_sim=min_sim
+        "challenges": (
+            overlap_challenges(
+                provenance, my_store, their_store, min_sim=min_sim
+            )
+            if with_challenges
+            else []
         ),
         "n_mine": n_mine,
         "n_theirs": len(theirs_raw),

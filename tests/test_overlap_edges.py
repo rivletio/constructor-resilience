@@ -337,16 +337,18 @@ def test_check_packet_missing_file(tmp_path):
 
 def test_check_packet_on_atoms_json_uses_store_check(tmp_path, capsys):
     root = tmp_path / ".coherence"
-    _run(
-        root,
-        "pack",
-        "--title",
-        "Bare Pack",
-        "--constraint",
-        "fact",
-        "--atom",
-        "Packets are the share unit, not transcripts.",
-    )
+    with pytest.raises(SystemExit) as packed:
+        _run(
+            root,
+            "pack",
+            "--title",
+            "Bare Pack",
+            "--constraint",
+            "fact",
+            "--atom",
+            "Packets are the share unit, not transcripts.",
+        )
+    assert packed.value.code == 1
     capsys.readouterr()
     atoms = root / "topics" / "bare-pack" / "atoms.json"
     with pytest.raises(SystemExit) as exc:
@@ -626,6 +628,10 @@ def test_union_lookup_hits_polarity_and_question():
     }
     uni = union_dataset(mine, theirs)
     assert uni["kind"] == "interest_union"
+    fast = union_dataset(mine, theirs, with_challenges=False)
+    assert fast["challenges"] == []
+    lu_fast = overlap_lookup(fast, "positional encodings")
+    assert lu_fast["hits"]
     assert uni["n_mine"] + uni["n_theirs"] == 5
     assert len(uni["atoms"]) == 5
 

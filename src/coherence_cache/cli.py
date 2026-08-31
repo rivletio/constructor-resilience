@@ -522,9 +522,12 @@ def cmd_pack(args):
         where = locator_label(a.get("at") if isinstance(a, dict) else None)
         loc = f"  @ {where}" if where else ""
         print(f"  [{i}] {atom_text(a)}{loc}")
-    from .check import format_check
+    from .check import check_store, format_check
 
     print(format_check(store))
+    _rows, _n, n_fail = check_store(store)
+    if n_fail:
+        raise SystemExit(1)
 
 
 def cmd_share(args):
@@ -1894,7 +1897,7 @@ def cmd_intersect(args):
         from .intersection import overlap_lookup, union_dataset
 
         src = (
-            union_dataset(mine, theirs, min_sim=args.min_sim)
+            union_dataset(mine, theirs, min_sim=args.min_sim, with_challenges=False)
             if is_union
             else doc
         )
@@ -1938,7 +1941,9 @@ def cmd_lookup(args):
                 seed_query=args.query,
             )
         else:
-            doc = union_dataset(mine, theirs, min_sim=args.min_sim)
+            doc = union_dataset(
+                mine, theirs, min_sim=args.min_sim, with_challenges=False
+            )
     else:
         raise SystemExit("lookup needs --packet FILE or --mine ID --theirs ID")
 
